@@ -28,11 +28,52 @@ from torchvision import transforms
 import yaml
 import matplotlib.pyplot as plt
 
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+import lpips
+import os
+
 
 def load_yaml(file_path: str) -> dict:
     with open(file_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
+
+
+def save_yaml(data: dict, file_path: str):
+    with open(file_path, 'w') as file:
+        yaml.dump(data, file)
+
+
+def compute_metrics(hat_x0, x0, loss_fn_vgg):
+    def to_eval(x: torch.Tensor):
+        return (x[0] / 2 + 0.5).clip(0, 1).detach()
+    psnr = peak_signal_noise_ratio(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), data_range=1).item()
+    ssim = structural_similarity(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), channel_axis=0, data_range=1).item()
+    lpips = loss_fn_vgg(to_eval(x0), to_eval(hat_x0))[0, 0, 0, 0].item()
+    return {
+        'psnr': psnr, 
+        'ssim': ssim, 
+        'lpips': lpips
+    }
+
+
+def calculate_average_metric(metrics_list):
+    avg_dict = {}
+    count_dict = {}
+
+    for metrics in metrics_list:
+        for key, value in metrics.items():
+            if key not in avg_dict:
+                avg_dict[key] = 0.0
+                count_dict[key] = 0
+            avg_dict[key] += value
+            count_dict[key] += 1
+
+    for key in avg_dict:
+        if count_dict[key] > 0:
+            avg_dict[key] /= count_dict[key]
+
+    return avg_dict
 
 
 def main():
@@ -52,6 +93,7 @@ def main():
     p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
     p.add_argument('--guidance', type=str, choices=["I", "II"], default="I")
+    p.add_argument('--log-dir', type=str, default=os.path.join("runs", "sample_condition"))
     
     
     #-----------------------------------------
@@ -104,7 +146,13 @@ def main():
     print(f"Operation: {operator_config['name']} / sigma_s: {operator_config['sigma_s']}")
     
     def run():
+        if not os.path.exists(args.log_dir):
+            os.mkdir(args.log_dir)
+
+        loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
         sigmas = K.sampling.get_sigmas_karras(args.steps, sigma_min, sigma_max, rho=7., device=device)
+        metrics_list = []
+        
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
             x0 = x0.to(device)
@@ -124,13 +172,21 @@ def main():
                 return x_0
             hat_x0 = K.evaluation.compute_features(accelerator, sample_fn, lambda x: x, args.n, args.batch_size)
 
-            # save results
-            measurement_filename = f"{args.prefix}_img_{i}_measurement.png"
+            # quantitive results
+            metrics = compute_metrics(hat_x0, x0, loss_fn_vgg)
+            metrics_list.append(metrics)
+
+            # qualitative results
+            measurement_filename = os.path.join(args.log_dir, f"{args.prefix}_img_{i}_measurement.png")
             K.utils.to_pil_image(measurement).save(measurement_filename)
             for j, out in enumerate(hat_x0):
-                hat_x0_filename = f"{args.prefix}_img_{i}_hat_x0_sample_{j}.png"
+                hat_x0_filename = os.path.join(args.log_dir, f"{args.prefix}_img_{i}_hat_x0_sample_{j}.png")
                 K.utils.to_pil_image(out).save(hat_x0_filename)
-            
+
+        avg_metrics = calculate_average_metric(metrics_list)
+        print(avg_metrics)
+        save_yaml(avg_metrics, os.path.join(args.log_dir, 'avg_metrics.yaml'))
+
     try:
         run()
     except KeyboardInterrupt:
