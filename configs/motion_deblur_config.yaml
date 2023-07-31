@@ -1,0 +1,4 @@
+name: motion_blur
+kernel_size: 61
+intensity: 0.5
+sigma_s: 0.05

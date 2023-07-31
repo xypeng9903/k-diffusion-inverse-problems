@@ -1,0 +1,5 @@
+name: gaussian_blur
+kernel_size: 61
+intensity: 3.0
+sigma_s: 0.05
+  
