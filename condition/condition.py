@@ -32,7 +32,9 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         self.guidance = guidance
         self.xstart_cov_type = xstart_cov_type
         self.lambda_ = lambda_
-        self.recon_mse = None # TODO
+        self.recon_mse = recon_mse
+        for key in self.recon_mse.keys():
+            self.recon_mse[key] = self.recon_mse[key].to(device)
         self.mat_solver = __MAT_SOLVER__[operator.name]
         self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
@@ -70,7 +72,8 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
                 / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
             ).clip(min=0)
             if self.recon_mse is not None:
-                variance = self.recon_mse[t]
+                idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
+                variance = self.recon_mse['mse_list'][idx]
             else:
                 variance = sigma.pow(2) / (1 + sigma.pow(2))
             xstart_cov = xstart_cov if sigma < 0.3 \
@@ -84,7 +87,8 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
             xstart_cov = sigma.pow(2) / self.lambda_ * torch.ones_like(xstart_mean)
         elif self.xstart_cov_type == 'analytic':
             assert self.recon_mse is not None
-            xstart_cov = self.recon_mse[t] * torch.ones_like(xstart_mean)
+            idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
+            xstart_cov = self.recon_mse['mse_list'][idx] * torch.ones_like(xstart_mean)
         else:
             raise NotImplementedError
         
