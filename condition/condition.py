@@ -19,8 +19,8 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
             measurement, 
             guidance='I',
             xstart_cov_type='mle',
-            _lambda = None,
-            recon_mse_path = None,
+            lambda_ = None,
+            recon_mse = None,
             quantize=False, 
             has_learned_sigmas=True, 
             device='cpu' 
@@ -31,17 +31,13 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         self.y = measurement
         self.guidance = guidance
         self.xstart_cov_type = xstart_cov_type
-        self._lambda = _lambda
+        self.lambda_ = lambda_
+        self.recon_mse = None # TODO
         self.mat_solver = __MAT_SOLVER__[operator.name]
         self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
-        if recon_mse_path is not None:
-            self.recon_mse = torch.load(recon_mse_path)
-        else:
-            self.recon_mse = None
-            
-
     def forward(self, x: torch.Tensor, sigma):
+        assert x.shape[0] == 1
         if self.guidance == "I":
             x = x.requires_grad_()
             uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
@@ -52,8 +48,11 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
                 sigma
             )
         elif self.guidance == "II":
-            # TODO
-            raise NotImplementedError
+            uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
+            return self._type_II_guidance(
+                uncond_xstart_pred["mean"],
+                uncond_xstart_pred["xstart_cov"]
+            )
         else:
             raise NotImplementedError
     
@@ -81,8 +80,8 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         elif self.xstart_cov_type == 'dps':
             xstart_cov = 0 * torch.ones_like(xstart_mean)
         elif self.xstart_cov_type == 'diffpir':
-            assert self._lambda is not None
-            xstart_cov = sigma.pow(2) / self._lambda * torch.ones_like(xstart_mean)
+            assert self.lambda_ is not None
+            xstart_cov = sigma.pow(2) / self.lambda_ * torch.ones_like(xstart_mean)
         elif self.xstart_cov_type == 'analytic':
             assert self.recon_mse is not None
             xstart_cov = self.recon_mse[t] * torch.ones_like(xstart_mean)
@@ -101,8 +100,8 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         xstart_mean = xstart_mean + sigma.pow(2) * likelihood_score
         return xstart_mean.clip(-1, 1).detach()
 
-    def _type_II_guidance(self, xstart_mean, xstart_cov, x, sigma):
-        xstart_mean = self.proximal_solver(self.operator, self.y, xstart_mean, xstart_cov)
+    def _type_II_guidance(self, xstart_mean, xstart_cov):
+        xstart_mean = self.proximal_solver(self.operator, self.y, xstart_mean, xstart_cov.mean())
         return xstart_mean.clip(-1, 1).detach()
 
 
@@ -151,6 +150,7 @@ def super_resolution_mat(operator, y, mean_x0, cov_x0):
     return mat
 
 
+# TODO: support diagnol posterior covariance
 __PROXIMAL_SOLVER__ = {}
 
 
@@ -170,12 +170,11 @@ def inpainting_proximal(operator, y, mean_x0, cov_x0):
 
 
 def _deblur_proximal(operator, y, mean_x0, cov_x0):
-    # TODO: untest
     sigma_s = operator.sigma_s
     FB, FBC, F2B, FBFy = operator.pre_calculated
     rho = sigma_s.pow(2) / cov_x0
     tau = rho.float().repeat(1, 1, 1, 1)
-    return sr.data_solution(mean_x0.float(), FB, FBC, F2B, FBFy, tau, 1)
+    return sr.data_solution(mean_x0.float(), FB, FBC, F2B, FBFy, tau, 1).float()
 
 
 @register_proximal_solver('gaussian_blur')
@@ -190,7 +189,11 @@ def motion_blur_proximal(operator, y, mean_x0, cov_x0):
 
 @register_proximal_solver('super_resolution')
 def super_resolution_proximal(operator, y, mean_x0, cov_x0):
-    # TODO
-    pass
+    sigma_s = operator.sigma_s
+    sf = operator.scale_factor
+    FB, FBC, F2B, FBFy = operator.pre_calculated
+    rho = sigma_s.pow(2) / cov_x0
+    tau = rho.float().repeat(1, 1, 1, 1)
+    return sr.data_solution(mean_x0.float(), FB, FBC, F2B, FBFy, tau, sf).float()
 
 

@@ -91,11 +91,10 @@ class SuperResolutionOperator(LinearOperator):
         self.kernel = torch.Tensor(kernels[0, k_index].astype(np.float64))
 
     def forward(self, data, **kwargs):
-        k = self.get_kernel().to(self.device)
-        FB, FBC, F2B, _ = pre_calculate(data, k, 1)
-        self.pre_calculated = (FB, FBC, F2B, None)
         y = self.down_sample(data) 
         y += self.sigma_s * torch.randn_like(y)
+        k = self.get_kernel().to(self.device)
+        self.pre_calculated = pre_calculate(y, k, self.scale_factor)
         return y
 
     def transpose(self, data, **kwargs):
