@@ -6,7 +6,7 @@ from k_diffusion.models import ImageDenoiserModelV2
 from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 from k_diffusion import utils
 from torch.fft import fft2, ifft2
-import condition.utils.utils_sisr as sr
+import condition.diffpir_utils.utils_sisr as sr
 from scipy.sparse.linalg import cg, LinearOperator
 import numpy as np
 

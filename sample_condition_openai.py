@@ -21,7 +21,7 @@ from guided_diffusion.script_util import (
     args_to_dict,
     add_dict_to_argparser
 )
-from condition.utils import utils_model
+from condition.diffpir_utils import utils_model
 from torch.utils import data
 from torchvision import transforms
 

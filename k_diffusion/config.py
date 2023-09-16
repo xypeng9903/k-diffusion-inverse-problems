@@ -59,7 +59,7 @@ def make_model(config):
             args_to_dict,
             add_dict_to_argparser
         )
-        from condition.utils import utils_model
+        from condition.diffpir_utils import utils_model
         openai_args = utils_model.create_argparser(config['model']['openai']).parse_args([])
         inner_model, diffusion = create_model_and_diffusion(**args_to_dict(openai_args, model_and_diffusion_defaults().keys()))
         model = OpenAIDenoiser(inner_model, diffusion)
