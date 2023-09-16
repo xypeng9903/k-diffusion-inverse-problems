@@ -17,8 +17,8 @@ class ConditionDenoiser(nn.Module):
     def __init__(
             self,
             denoiser, 
-            operator=None, 
-            measurement=None, 
+            operator, 
+            measurement, 
             guidance='I',
             device='cpu'
     ) -> None:
@@ -77,8 +77,8 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
     def __init__(
             self, 
             denoiser: ImageDenoiserModelV2, 
-            operator=None, 
-            measurement=None, 
+            operator, 
+            measurement, 
             guidance='I',
             x0_cov_type='mle',
             mle_sigma_thres=0.2,
@@ -139,121 +139,86 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
         return {"mean": x0_mean, "var": x0_var}
 
 
-class ConditionOpenAIDenoiser(OpenAIDenoiser):
+class ConditionOpenAIDenoiser(ConditionDenoiser):
     '''Approximate E[x0|xt, y] given denoiser E[x0|xt]'''
     
     def __init__(
             self, 
-            model, 
+            denoiser, 
             diffusion: GaussianDiffusion, 
-            operator=None, 
-            measurement=None, 
+            operator, 
+            measurement, 
             guidance='I',
-            xstart_cov_type='convert',
+            x0_cov_type='convert',
             mle_sigma_thres=0.2,
             lambda_=None,
-            recon_mse=None,
-            quantize=False, 
-            has_learned_sigmas=True, 
+            recon_mse=None, 
             device='cpu'
     ):
-        super().__init__(model, diffusion, quantize, has_learned_sigmas, device)
+        super().__init__(denoiser, operator, measurement, guidance, device)
+
         self.diffusion = diffusion
-        self.operator = operator
-        self.y = measurement
         self.guidance = guidance
-        self.xstart_cov_type = xstart_cov_type
+        self.x0_cov_type = x0_cov_type
         self.lambda_ = lambda_
         self.mle_sigma_thres = mle_sigma_thres
         self.device = device
+
+        self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=device)
 
         self.recon_mse = recon_mse
         if recon_mse is not None:
             for key in self.recon_mse.keys():
                 self.recon_mse[key] = self.recon_mse[key].to(device)
-        
-        if operator is not None:
-            self.mat_solver = __MAT_SOLVER__[operator.name]
-            self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
-    def forward(self, x: torch.Tensor, sigma):
-        assert x.shape[0] == 1
-        if self.guidance == "I":
-            x = x.requires_grad_()
-            uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
-            hat_x0 =  self._type_I_guidance(
-                uncond_xstart_pred["mean"],
-                uncond_xstart_pred["cov"],
-                x,
-                sigma
-            )
-        elif self.guidance == "II":
-            uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
-            hat_x0 =  self._type_II_guidance(
-                uncond_xstart_pred["mean"],
-                uncond_xstart_pred["cov"]
-            )
-        else:
-            raise ValueError('Invalid guidance type.')
-        return hat_x0
-    
-    def uncond_xstart_mean_variance(self, x, sigma):
+
+    def uncond_x0_mean_variance(self, x, sigma):
         c_out, c_in = [utils.append_dims(x, x.ndim) for x in self.get_scalings(sigma)]
-        t = self.sigma_to_t(sigma).long()
+        t = self.openai_denoiser.sigma_to_t(sigma).long()
         D = self.diffusion
 
         xprev_pred = D.p_mean_variance(self.inner_model, x * c_in, t)
-        xstart_mean = xprev_pred['pred_xstart']
+        x0_mean = xprev_pred['pred_xstart']
 
-        if self.xstart_cov_type == 'convert':
+        if self.x0_cov_type == 'convert':
             if sigma < self.mle_sigma_thres:
-                xstart_cov = (
+                x0_var = (
                     (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
                     / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-                ).clip(min=0)          
+                ).clip(min=0) # Theorem 1         
             else:
                 if self.guidance == "I":
-                    xstart_cov = sigma.pow(2) / (1 + sigma.pow(2)) 
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
-                    xstart_cov = sigma.pow(2) / self.lambda_ 
+                    x0_var = sigma.pow(2) / self.lambda_ 
 
-        elif self.xstart_cov_type == 'pgdm':
-            xstart_cov = sigma.pow(2) / (1 + sigma.pow(2)) 
+        elif self.x0_cov_type == 'pgdm':
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
-        elif self.xstart_cov_type == 'dps':
-            xstart_cov = torch.zeros(1).to(self.device) 
+        elif self.x0_cov_type == 'dps':
+            x0_var = torch.zeros(1).to(self.device) 
 
-        elif self.xstart_cov_type == 'diffpir':
+        elif self.x0_cov_type == 'diffpir':
             assert self.lambda_ is not None
-            xstart_cov = sigma.pow(2) / self.lambda_ 
+            x0_var = sigma.pow(2) / self.lambda_ 
             
-        elif self.xstart_cov_type == 'analytic':
+        elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
             if sigma < self.mle_sigma_thres:
-                xstart_cov = self.recon_mse['mse_list'][idx]
+                x0_var = self.recon_mse['mse_list'][idx]
             else:
                 if self.guidance == "I":
-                    xstart_cov = sigma.pow(2) / (1 + sigma.pow(2))
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2))
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
-                    xstart_cov = sigma.pow(2) / self.lambda_
+                    x0_var = sigma.pow(2) / self.lambda_
 
         else:
             raise ValueError('Invalid posterior covariance type.')
                         
-        return {"mean": xstart_mean, "cov": xstart_cov}
-
-    def _type_I_guidance(self, xstart_mean, xstart_cov, x, sigma):
-        mat = self.mat_solver(self.operator, self.y, xstart_mean, xstart_cov)
-        likelihood_score = grad((mat.detach() * xstart_mean).sum(), x)[0]
-        xstart_mean = xstart_mean + sigma.pow(2) * likelihood_score
-        return xstart_mean.clip(-1, 1).detach()
-
-    def _type_II_guidance(self, xstart_mean, xstart_cov):
-        xstart_mean = self.proximal_solver(self.operator, self.y, xstart_mean.detach(), xstart_cov.detach())
-        return xstart_mean.clip(-1, 1).detach()
+        return {"mean": x0_mean, "var": x0_var}
 
 
 #----------------------------------------------------------------

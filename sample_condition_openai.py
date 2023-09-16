@@ -10,9 +10,18 @@ import torch
 from tqdm import trange, tqdm
 
 import k_diffusion as K
-from condition.condition import ConditionImageDenoiserV2
+from condition.condition import ConditionOpenAIDenoiser
 from condition.measurements import get_operator
 
+from guided_diffusion import dist_util
+from guided_diffusion.script_util import (
+    NUM_CLASSES,
+    model_and_diffusion_defaults,
+    create_model_and_diffusion,
+    args_to_dict,
+    add_dict_to_argparser
+)
+from condition.utils import utils_model
 from torch.utils import data
 from torchvision import transforms
 
@@ -73,24 +82,24 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('--batch-size', type=int, default=1,
                    help='the batch size')
-    p.add_argument('--checkpoint', type=str, default="model_00270000.pth",
+    p.add_argument('--checkpoint', type=str, default="../model_zoo/diffusion_ffhq_10m.pt",
                    help='the checkpoint to use')
-    p.add_argument('--config', type=str, default="configs/config_128x128_ffhq_image_v2.json",
+    p.add_argument('--config', type=str, default="configs/config_256x256_ffhq.json",
                    help='the model config')
-    p.add_argument('--operator-config', type=str, default="configs/inpainting_128x128_config.yaml")
+    p.add_argument('--operator-config', type=str, default="configs/inpainting_config.yaml")
     p.add_argument('-n', type=int, default=1,
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
     p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
-    p.add_argument('--guidance', type=str, choices=["I", "II"], default="II")
-    p.add_argument('--xstart-cov-type', type=str, choices=["mle", "pgdm", "dps", "diffpir", "analytic"], default="mle")
-    p.add_argument('--lam', type=float, default=1)
-    p.add_argument('--mle-sigma-thres', type=float, default=0.3)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_mle"))
+    p.add_argument('--guidance', type=str, choices=["I", "II", "mix"], default="I")
+    p.add_argument('--xstart-cov-type', type=str, choices=["convert", "pgdm", "dps", "diffpir", "analytic"], default="convert")
+    p.add_argument('--lam', type=float, default=None)
+    p.add_argument('--mle-sigma-thres', type=float, default=0.2)
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
-    p.add_argument('--ode', dest='ode', action='store_true')
+    p.add_argument('--sde', dest='sde', action='store_true')
 
     #-----------------------------------------
     # Setup unconditional model and test data
@@ -103,7 +112,9 @@ def main():
     config = K.config.load_config(open(args.config))
     model_config = config['model']
     dataset_config = config['dataset']
-    
+    extra_args = utils_model.create_argparser(model_config['openai']).parse_args([])
+
+    add_dict_to_argparser(p, args_to_dict(extra_args, model_and_diffusion_defaults().keys()))
     args = p.parse_args()
 
     # TODO: allow non-square input sizes
@@ -114,22 +125,21 @@ def main():
     device = accelerator.device
     print('Using device:', device, flush=True)
 
-    inner_model = K.config.make_model(config)
-    inner_model.load_state_dict(torch.load(args.checkpoint, map_location='cpu')['model'])
+    inner_model, diffusion = create_model_and_diffusion(
+        **args_to_dict(args, model_and_diffusion_defaults().keys()))
+    inner_model.load_state_dict(
+        dist_util.load_state_dict(args.checkpoint, map_location="cpu")
+    )
     inner_model = inner_model.eval().to(device)
-    accelerator.print('Parameters:', K.utils.n_params(inner_model))
-    inner_model = K.config.make_denoiser_wrapper(config)(inner_model)
 
     sigma_min = model_config['sigma_min']
     sigma_max = model_config['sigma_max']
-    
+
+    # test data
     tf = transforms.Compose([
-        transforms.Resize(size[0], interpolation=transforms.InterpolationMode.LANCZOS),
-        transforms.CenterCrop(size[0]),
         transforms.ToTensor(),
         lambda x: x * 2 - 1
     ])
-
     test_set = K.utils.FolderOfImages(dataset_config['location'], transform=tf)
     test_dl = data.DataLoader(test_set, args.batch_size)
 
@@ -150,20 +160,21 @@ def main():
 
         loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
         sigmas = K.sampling.get_sigmas_karras(args.steps, sigma_min, sigma_max, rho=7., device=device)
-        # recon_mse = torch.load(model_config['recon_mse'])
+        recon_mse = torch.load(model_config['recon_mse'])
         metrics_list = []
         
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
             x0 = x0.to(device)
             measurement = operator.forward(x0)
-            model = ConditionImageDenoiserV2(
+            model = ConditionOpenAIDenoiser(
                 inner_model,
+                diffusion,
                 operator,
                 measurement,
                 args.guidance,
                 args.xstart_cov_type,
-                recon_mse=None,
+                recon_mse=recon_mse,
                 lambda_=args.lam,
                 mle_sigma_thres=args.mle_sigma_thres,
                 device=device
@@ -172,7 +183,7 @@ def main():
             def sample_fn(n):
                 x = torch.randn([n, model_config['input_channels'], size[0], size[1]], device=device) * sigma_max
                 sampler = partial(K.sampling.sample_euler, model, x, sigmas, disable=not accelerator.is_local_main_process)
-                if not args.ode:
+                if args.sde:
                     x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
                 else:
                     x_0 = sampler()     
