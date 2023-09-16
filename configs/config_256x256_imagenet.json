@@ -1,6 +1,5 @@
 {
     "model": {
-        "type": "openai_ffhq",
         "input_channels": 3,
         "input_size": [256, 256],
         "sigma_min": 1e-2,
@@ -11,14 +10,14 @@
             "std": 1.2
         },
         "openai": {
-            "num_channels": 128,
-            "num_res_blocks": 1,
-            "attention_resolutions": "16"
+            "num_channels": 256,
+            "num_res_blocks": 2,
+            "attention_resolutions": "8,16,32"
         },
-        "recon_mse": "runs/analytic_variance/ffhq/recon_mse.pt"
+        "recon_mse": "runs/analytic_variance/imagenet/recon_mse.pt"
     },
     "dataset": {
         "type": "imagefolder",
-        "location": "../testsets/ffhq_val"
+        "location": "../testsets/imagenet_val"
     }
 }

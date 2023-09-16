@@ -117,9 +117,11 @@ class MotionBlurOperator(LinearOperator):
                                std=intensity,
                                device=device).to(device)  # should we keep this device term?
 
-        self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
-        kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
-        self.conv.update_weights(kernel)
+        # self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
+        self.kernel = np.load('./condition/kernels/motion_ks61_std0.5.npy')
+        # kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
+        # self.conv.update_weights(kernel)
+        self.conv.update_weights(self.kernel)
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
 
     def forward(self, data, **kwargs):
@@ -133,7 +135,8 @@ class MotionBlurOperator(LinearOperator):
         return data
 
     def get_kernel(self):
-        kernel = torch.Tensor(self.kernel.kernelMatrix).to(self.device)
+        # kernel = torch.Tensor(self.kernel.kernelMatrix).to(self.device)
+        kernel = torch.Tensor(self.kernel).to(self.device)
         return kernel.view(1, 1, self.kernel_size, self.kernel_size)
 
 
@@ -146,7 +149,8 @@ class GaussialBlurOperator(LinearOperator):
                                kernel_size=kernel_size,
                                std=intensity,
                                device=device).to(device)
-        self.kernel = self.conv.get_kernel()
+        # self.kernel = self.conv.get_kernel()
+        self.kernel = torch.Tensor(np.load('./condition/kernels/gaussian_ks61_std3.0.npy')).to(device)
         self.conv.update_weights(self.kernel.type(torch.float32))
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
 
@@ -256,8 +260,10 @@ class MaskGenerator:
         maxl = image_size - margin_width - w
 
         # bb
-        t = np.random.randint(margin_height, maxt)
-        l = np.random.randint(margin_width, maxl)
+        # t = np.random.randint(margin_height, maxt)
+        # l = np.random.randint(margin_width, maxl)
+        t = (margin_height + maxt) // 2
+        l = (margin_width + maxl) // 2
 
         # make mask
         mask = torch.ones([B, C, H, W], device=img.device)

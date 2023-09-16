@@ -1,5 +1,5 @@
 name: inpainting
-sigma_s: 0.05
+sigma_s: 0.0
 mask_opt:
   mask_type: random # box, random
   # mask_len_range: !!python/tuple [128, 129]  # for box

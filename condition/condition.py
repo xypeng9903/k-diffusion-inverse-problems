@@ -2,10 +2,141 @@ from torch import nn
 from torch.autograd import grad
 import torch
 from k_diffusion.external import OpenAIDenoiser
+from k_diffusion.models import ImageDenoiserModelV2
 from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 from k_diffusion import utils
 from torch.fft import fft2, ifft2
 import condition.utils.utils_sisr as sr
+from scipy.sparse.linalg import cg, LinearOperator
+import numpy as np
+
+
+class ConditionDenoiser(nn.Module):
+    '''Approximate E[x0|xt, y] given denoiser E[x0|xt]'''
+
+    def __init__(
+            self,
+            denoiser, 
+            operator=None, 
+            measurement=None, 
+            guidance='I',
+            device='cpu'
+    ) -> None:
+        super().__init__()
+        self.denoiser = denoiser
+        self.operator = operator
+        self.y = measurement
+        self.guidance = guidance
+        self.device = device
+        
+        if operator is not None:
+            self.mat_solver = __MAT_SOLVER__[operator.name]
+            self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
+
+    def forward(self, x, sigma):
+        assert x.shape[0] == 1
+        if self.guidance == "I":
+            x = x.requires_grad_()
+            uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
+            hat_x0 =  self._type_I_guidance(
+                uncond_x0_pred["mean"],
+                uncond_x0_pred["var"],
+                x,
+                sigma
+            )
+
+        elif self.guidance == "II":
+            uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
+            hat_x0 =  self._type_II_guidance(
+                uncond_x0_pred["mean"],
+                uncond_x0_pred["var"]
+            )
+
+        else:
+            raise ValueError("Invalid guidance type.")
+            
+        return hat_x0
+
+    def uncond_x0_mean_var(self, x, sigma):
+        raise NotImplementedError
+    
+    def _type_I_guidance(self, x0_mean, x0_var, x, sigma):
+        mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
+        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0]
+        x0_mean = x0_mean + sigma.pow(2) * likelihood_score
+        return x0_mean.clip(-1, 1).detach()
+
+    def _type_II_guidance(self, x0_mean, x0_var):
+        x0_mean = self.proximal_solver(self.operator, self.y, x0_mean.detach(), x0_var.detach())
+        return x0_mean.clip(-1, 1).detach()
+
+
+class ConditionImageDenoiserV2(ConditionDenoiser):
+    '''Approximate E[x0|xt, y] given denoiser E[x0|xt]'''
+    
+    def __init__(
+            self, 
+            denoiser: ImageDenoiserModelV2, 
+            operator=None, 
+            measurement=None, 
+            guidance='I',
+            x0_cov_type='mle',
+            mle_sigma_thres=0.2,
+            lambda_=None,
+            recon_mse=None,
+            device='cpu'
+    ):
+        super().__init__(denoiser, operator, measurement, guidance, device)
+
+        self.x0_cov_type = x0_cov_type
+        self.lambda_ = lambda_
+        self.mle_sigma_thres = mle_sigma_thres
+
+        self.recon_mse = recon_mse
+        if recon_mse is not None:
+            for key in self.recon_mse.keys():
+                self.recon_mse[key] = self.recon_mse[key].to(device)
+    
+    def uncond_x0_mean_var(self, x, sigma):
+        denoiser_pred = self.denoiser(x, sigma, return_variance=True)
+        x0_mean = denoiser_pred[0]
+
+        if self.xstart_cov_type == 'mle':
+            if sigma < self.mle_sigma_thres:
+                x0_var = denoiser_pred[1]  
+            else:
+                if self.guidance == "I":
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                elif self.guidance == "II":
+                    assert self.lambda_ is not None
+                    x0_var = sigma.pow(2) / self.lambda_ 
+
+        elif self.xstart_cov_type == 'pgdm':
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+
+        elif self.xstart_cov_type == 'dps':
+            x0_var = torch.zeros(1).to(self.device) 
+
+        elif self.xstart_cov_type == 'diffpir':
+            assert self.lambda_ is not None
+            x0_var = sigma.pow(2) / self.lambda_ 
+            
+        elif self.xstart_cov_type == 'analytic':
+            assert self.recon_mse is not None
+            idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
+            if sigma < self.mle_sigma_thres:
+                x0_var = self.recon_mse['mse_list'][idx]
+            else:
+                if self.guidance == "I":
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2))
+                elif self.guidance == "II":
+                    assert self.lambda_ is not None
+                    x0_var = sigma.pow(2) / self.lambda_
+
+        else:
+            raise ValueError('Invalid posterior covariance type.')
+        
+        return {"mean": x0_mean, "var": x0_var}
 
 
 class ConditionOpenAIDenoiser(OpenAIDenoiser):
@@ -15,15 +146,16 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
             self, 
             model, 
             diffusion: GaussianDiffusion, 
-            operator, 
-            measurement, 
+            operator=None, 
+            measurement=None, 
             guidance='I',
-            xstart_cov_type='mle',
-            lambda_ = None,
-            recon_mse = None,
+            xstart_cov_type='convert',
+            mle_sigma_thres=0.2,
+            lambda_=None,
+            recon_mse=None,
             quantize=False, 
             has_learned_sigmas=True, 
-            device='cpu' 
+            device='cpu'
     ):
         super().__init__(model, diffusion, quantize, has_learned_sigmas, device)
         self.diffusion = diffusion
@@ -32,31 +164,38 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         self.guidance = guidance
         self.xstart_cov_type = xstart_cov_type
         self.lambda_ = lambda_
+        self.mle_sigma_thres = mle_sigma_thres
+        self.device = device
+
         self.recon_mse = recon_mse
-        for key in self.recon_mse.keys():
-            self.recon_mse[key] = self.recon_mse[key].to(device)
-        self.mat_solver = __MAT_SOLVER__[operator.name]
-        self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
+        if recon_mse is not None:
+            for key in self.recon_mse.keys():
+                self.recon_mse[key] = self.recon_mse[key].to(device)
+        
+        if operator is not None:
+            self.mat_solver = __MAT_SOLVER__[operator.name]
+            self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
     def forward(self, x: torch.Tensor, sigma):
         assert x.shape[0] == 1
         if self.guidance == "I":
             x = x.requires_grad_()
             uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
-            return self._type_I_guidance(
+            hat_x0 =  self._type_I_guidance(
                 uncond_xstart_pred["mean"],
-                uncond_xstart_pred["xstart_cov"],
+                uncond_xstart_pred["cov"],
                 x,
                 sigma
             )
         elif self.guidance == "II":
             uncond_xstart_pred = self.uncond_xstart_mean_variance(x, sigma)
-            return self._type_II_guidance(
+            hat_x0 =  self._type_II_guidance(
                 uncond_xstart_pred["mean"],
-                uncond_xstart_pred["xstart_cov"]
+                uncond_xstart_pred["cov"]
             )
         else:
-            raise NotImplementedError
+            raise ValueError('Invalid guidance type.')
+        return hat_x0
     
     def uncond_xstart_mean_variance(self, x, sigma):
         c_out, c_in = [utils.append_dims(x, x.ndim) for x in self.get_scalings(sigma)]
@@ -66,48 +205,60 @@ class ConditionOpenAIDenoiser(OpenAIDenoiser):
         xprev_pred = D.p_mean_variance(self.inner_model, x * c_in, t)
         xstart_mean = xprev_pred['pred_xstart']
 
-        if self.xstart_cov_type == 'mle':
-            xstart_cov = (
-                (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
-                / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-            ).clip(min=0)
-            if self.recon_mse is not None:
-                idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-                variance = self.recon_mse['mse_list'][idx]
+        if self.xstart_cov_type == 'convert':
+            if sigma < self.mle_sigma_thres:
+                xstart_cov = (
+                    (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
+                    / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
+                ).clip(min=0)          
             else:
-                variance = sigma.pow(2) / (1 + sigma.pow(2))
-            xstart_cov = xstart_cov if sigma < 0.3 \
-                                    else variance * torch.ones_like(xstart_mean)
+                if self.guidance == "I":
+                    xstart_cov = sigma.pow(2) / (1 + sigma.pow(2)) 
+                elif self.guidance == "II":
+                    assert self.lambda_ is not None
+                    xstart_cov = sigma.pow(2) / self.lambda_ 
+
         elif self.xstart_cov_type == 'pgdm':
-            xstart_cov = sigma.pow(2) / (1 + sigma.pow(2)) * torch.ones_like(xstart_mean)
+            xstart_cov = sigma.pow(2) / (1 + sigma.pow(2)) 
+
         elif self.xstart_cov_type == 'dps':
-            xstart_cov = 0 * torch.ones_like(xstart_mean)
+            xstart_cov = torch.zeros(1).to(self.device) 
+
         elif self.xstart_cov_type == 'diffpir':
             assert self.lambda_ is not None
-            xstart_cov = sigma.pow(2) / self.lambda_ * torch.ones_like(xstart_mean)
+            xstart_cov = sigma.pow(2) / self.lambda_ 
+            
         elif self.xstart_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-            xstart_cov = self.recon_mse['mse_list'][idx] * torch.ones_like(xstart_mean)
+            if sigma < self.mle_sigma_thres:
+                xstart_cov = self.recon_mse['mse_list'][idx]
+            else:
+                if self.guidance == "I":
+                    xstart_cov = sigma.pow(2) / (1 + sigma.pow(2))
+                elif self.guidance == "II":
+                    assert self.lambda_ is not None
+                    xstart_cov = sigma.pow(2) / self.lambda_
+
         else:
-            raise NotImplementedError
-        
-        return {
-            "mean": xstart_mean,
-            "xstart_cov": xstart_cov
-        }
+            raise ValueError('Invalid posterior covariance type.')
+                        
+        return {"mean": xstart_mean, "cov": xstart_cov}
 
     def _type_I_guidance(self, xstart_mean, xstart_cov, x, sigma):
-        assert x.shape[0] == 1
         mat = self.mat_solver(self.operator, self.y, xstart_mean, xstart_cov)
         likelihood_score = grad((mat.detach() * xstart_mean).sum(), x)[0]
         xstart_mean = xstart_mean + sigma.pow(2) * likelihood_score
         return xstart_mean.clip(-1, 1).detach()
 
     def _type_II_guidance(self, xstart_mean, xstart_cov):
-        xstart_mean = self.proximal_solver(self.operator, self.y, xstart_mean, xstart_cov.mean())
+        xstart_mean = self.proximal_solver(self.operator, self.y, xstart_mean.detach(), xstart_cov.detach())
         return xstart_mean.clip(-1, 1).detach()
 
+
+#----------------------------------------------------------------
+# Implementation of mat solver (computing v) for type I guidance
+#----------------------------------------------------------------
 
 __MAT_SOLVER__ = {}
 
@@ -120,42 +271,92 @@ def register_mat_solver(name):
 
 
 @register_mat_solver('inpainting')
-def inpainting_mat(operator, y, mean_x0, cov_x0):
+@torch.no_grad()
+def inpainting_mat(operator, y, x0_mean, x0_var):
     mask = operator.mask
-    sigma_s = operator.sigma_s
-    mat =  (mask * y - mask * mean_x0) / (sigma_s.pow(2) + cov_x0)
+    sigma_s = operator.sigma_s.clip(min=0.001)
+    mat =  (mask * y - mask * x0_mean) / (sigma_s.pow(2) + x0_var)
     return mat
 
 
-def _deblur_mat(operator, y, mean_x0, cov_x0):
-    sigma_s = operator.sigma_s
+@torch.no_grad()
+def _deblur_mat(operator, y, x0_mean, x0_var):
+    sigma_s = operator.sigma_s.clip(min=0.001)
     FB, FBC, F2B, FBFy = operator.pre_calculated
-    mat = ifft2((FBFy - F2B * fft2(mean_x0)) / (sigma_s.pow(2) + cov_x0 * F2B)).real
+
+    if x0_var.numel() == 1:
+        mat = ifft2((FBFy - F2B * fft2(x0_mean)) / (sigma_s.pow(2) + x0_var.mean() * F2B)).real
+
+    else:
+        class A(LinearOperator):
+            def __init__(self):
+                super().__init__(np.float32, (y.numel(), y.numel()))
+
+            def _matvec(self, u):
+                u = torch.Tensor(u).reshape(y.shape).to(y.device)
+                u = sigma_s**2 * u + ifft2(FB * fft2(x0_var * ifft2(FBC * fft2(u))))
+                u = u.real.flatten().cpu().numpy()
+                return u
+        
+        b = (y - ifft2(FB * fft2(x0_mean))).real.flatten().detach().cpu().numpy()
+        u = cg(A(), b)[0]
+        u = torch.Tensor(u.reshape(y.shape)).to(y.device)
+        mat = ifft2(FBC * fft2(u)).real
+   
     return mat
 
 
 @register_mat_solver('gaussian_blur')
-def gaussian_blur_mat(operator, y, mean_x0, cov_x0):
-    return _deblur_mat(operator, y, mean_x0, cov_x0)
+@torch.no_grad()
+def gaussian_blur_mat(operator, y, x0_mean, x0_var):
+    return _deblur_mat(operator, y, x0_mean, x0_var)
 
 
 @register_mat_solver('motion_blur')
-def motion_blur_mat(operator, y, mean_x0, cov_x0):
-    return _deblur_mat(operator, y, mean_x0, cov_x0)
+@torch.no_grad()
+def motion_blur_mat(operator, y, x0_mean, x0_var):
+    return _deblur_mat(operator, y, x0_mean, x0_var)
 
 
 @register_mat_solver('super_resolution')
-def super_resolution_mat(operator, y, mean_x0, cov_x0):
-    sigma_s = operator.sigma_s
+@torch.no_grad()
+def super_resolution_mat(operator, y, x0_mean, x0_var):
+    sigma_s = operator.sigma_s.clip(min=0.001).clip(min=1e-2)
     sf = operator.scale_factor
     FB, FBC, F2B, FBFy = operator.pre_calculated
-    invW = torch.mean(sr.splits(cov_x0 * F2B, sf), dim=-1, keepdim=False)
-    mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(mean_x0)), sf)) / (sigma_s.pow(2) + invW)).repeat(1, 1, sf, sf)).real
+    
+    if x0_var.numel() == 1:
+        invW = torch.mean(sr.splits(x0_var.mean() * F2B, sf), dim=-1, keepdim=False)
+        mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + invW)).repeat(1, 1, sf, sf)).real
+    
+    else:
+        class A(LinearOperator):
+            def __init__(self):
+                super().__init__(np.float32, (y.numel(), y.numel()))
+
+            def _matvec(self, u):
+                u = torch.Tensor(u).reshape(y.shape).to(y.device)
+                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(x0_var * ifft2(FBC * fft2(sr.upsample(u, sf))))), sf)
+                u = u.real.flatten().cpu().numpy()
+                return u
+        
+        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().cpu().numpy()
+        u = cg(A(), b)[0]
+        u = torch.Tensor(u.reshape(y.shape)).to(y.device)
+        mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
+
     return mat
 
 
-# TODO: support diagnol posterior covariance
+#----------------------------------------------------------------------------------
+# Implementation of proximal solver (computing E_q[x0|xt, y]) for type II guidance
+#----------------------------------------------------------------------------------
+
 __PROXIMAL_SOLVER__ = {}
+
+
+def get_proximal_solver(name):
+    return __PROXIMAL_SOLVER__[name]
 
 
 def register_proximal_solver(name):
@@ -166,38 +367,74 @@ def register_proximal_solver(name):
 
 
 @register_proximal_solver('inpainting')
-def inpainting_proximal(operator, y, mean_x0, cov_x0):
+def inpainting_proximal(operator, y, x0_mean, x0_var):
     mask = operator.mask
-    sigma_s = operator.sigma_s
-    rho = sigma_s.pow(2) / cov_x0
-    return (mask * y + rho * mean_x0) / (mask + rho)
+    sigma_s = operator.sigma_s.clip(min=0.001)
+    return (x0_var * mask * y + sigma_s**2 * x0_mean) / (x0_var * mask + sigma_s**2)
 
 
-def _deblur_proximal(operator, y, mean_x0, cov_x0):
-    sigma_s = operator.sigma_s
+def _deblur_proximal(operator, y, x0_mean, x0_var):
+    sigma_s = operator.sigma_s.clip(min=0.001)
     FB, FBC, F2B, FBFy = operator.pre_calculated
-    rho = sigma_s.pow(2) / cov_x0
-    tau = rho.float().repeat(1, 1, 1, 1)
-    return sr.data_solution(mean_x0.float(), FB, FBC, F2B, FBFy, tau, 1).float()
+
+    if x0_var.numel() == 1:
+        rho = sigma_s.pow(2) / x0_var.mean()
+        tau = rho.float().repeat(1, 1, 1, 1)
+        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, 1).float()
+    
+    else:
+        class A(LinearOperator):
+            def __init__(self):
+                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+
+            def _matvec(self, x):
+                x = torch.Tensor(x).reshape(x0_mean.shape).to(x0_mean.device)
+                x = sigma_s**2 * x + x0_var * ifft2(F2B * fft2(x))
+                x = x.real.flatten().cpu().numpy()
+                return x
+            
+        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().cpu().numpy()
+        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().cpu().numpy())[0]
+        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean) 
+    
+    return cond_x0_mean.clip(-1, 1)
 
 
 @register_proximal_solver('gaussian_blur')
-def gaussian_blur_proximal(operator, y, mean_x0, cov_x0):
-    return _deblur_proximal(operator, y, mean_x0, cov_x0)
+def gaussian_blur_proximal(operator, y, x0_mean, x0_var):
+    return _deblur_proximal(operator, y, x0_mean, x0_var)
 
 
 @register_proximal_solver('motion_blur')
-def motion_blur_proximal(operator, y, mean_x0, cov_x0):
-    return _deblur_proximal(operator, y, mean_x0, cov_x0)
+def motion_blur_proximal(operator, y, x0_mean, x0_var):
+    return _deblur_proximal(operator, y, x0_mean, x0_var)
 
 
 @register_proximal_solver('super_resolution')
-def super_resolution_proximal(operator, y, mean_x0, cov_x0):
-    sigma_s = operator.sigma_s
+def super_resolution_proximal(operator, y, x0_mean, x0_var):
+    sigma_s = operator.sigma_s.clip(min=0.001)
     sf = operator.scale_factor
     FB, FBC, F2B, FBFy = operator.pre_calculated
-    rho = sigma_s.pow(2) / cov_x0
-    tau = rho.float().repeat(1, 1, 1, 1)
-    return sr.data_solution(mean_x0.float(), FB, FBC, F2B, FBFy, tau, sf).float()
 
+    if x0_var.numel() == 1:
+        rho = sigma_s.pow(2) / x0_var.mean()
+        tau = rho.float().repeat(1, 1, 1, 1)
+        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, sf).float()
+
+    else:
+        class A(LinearOperator):
+            def __init__(self):
+                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+
+            def _matvec(self, x):
+                x = torch.Tensor(x).reshape(x0_mean.shape).to(x0_mean.device)
+                x = sigma_s**2 * x + x0_var * ifft2(FBC * fft2(sr.upsample(sr.downsample(ifft2(FB * fft2(x)), sf), sf)))
+                x = x.real.flatten().cpu().numpy()
+                return x
+            
+        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().cpu().numpy()
+        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().cpu().numpy())[0]
+        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean.device)
+
+    return cond_x0_mean
 

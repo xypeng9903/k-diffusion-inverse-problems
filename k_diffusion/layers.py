@@ -40,10 +40,24 @@ class DenoiserWithVariance(Denoiser):
         c_skip, c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
         noised_input = input + noise * utils.append_dims(sigma, input.ndim)
         model_output, logvar = self.inner_model(noised_input * c_in, sigma, return_variance=True, **kwargs)
-        logvar = utils.append_dims(logvar, model_output.ndim)
+        if logvar.shape != model_output.shape:
+            logvar = utils.append_dims(logvar, model_output.ndim)
         target = (input - c_skip * noised_input) / c_out
         losses = ((model_output - target) ** 2 / logvar.exp() + logvar) / 2
         return losses.flatten(1).mean(1)
+
+    def forward(self, input, sigma, **kwargs):
+        return_variance = kwargs.get('return_variance', False)
+        c_skip, c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+        model_out = self.inner_model(input * c_in, sigma, **kwargs)
+        
+        if return_variance:
+            x0_mean = model_out[0] * c_out + input * c_skip
+            x0_var = model_out[1].exp() * c_out**2
+            return x0_mean, x0_var
+        else:
+            x0_mean = model_out * c_out + input * c_skip
+            return x0_mean
 
 
 class SimpleLossDenoiser(Denoiser):

@@ -49,22 +49,42 @@ def load_config(file):
 
 def make_model(config):
     config = config['model']
-    assert config['type'] == 'image_v1'
-    model = models.ImageDenoiserModelV1(
-        config['input_channels'],
-        config['mapping_out'],
-        config['depths'],
-        config['channels'],
-        config['self_attn_depths'],
-        config['cross_attn_depths'],
-        patch_size=config['patch_size'],
-        dropout_rate=config['dropout_rate'],
-        mapping_cond_dim=config['mapping_cond_dim'] + (9 if config['augment_wrapper'] else 0),
-        unet_cond_dim=config['unet_cond_dim'],
-        cross_cond_dim=config['cross_cond_dim'],
-        skip_stages=config['skip_stages'],
-        has_variance=config['has_variance'],
-    )
+    if config['type'] == 'openai':
+        from external import OpenAIDenoiser
+        from guided_diffusion import dist_util
+        from guided_diffusion.script_util import (
+            NUM_CLASSES,
+            model_and_diffusion_defaults,
+            create_model_and_diffusion,
+            args_to_dict,
+            add_dict_to_argparser
+        )
+        from condition.utils import utils_model
+        openai_args = utils_model.create_argparser(config['model']['openai']).parse_args([])
+        inner_model, diffusion = create_model_and_diffusion(**args_to_dict(openai_args, model_and_diffusion_defaults().keys()))
+        model = OpenAIDenoiser(inner_model, diffusion)
+    else:
+        if config['type'] == 'image_v1':
+            ImageDenoiser = models.ImageDenoiserModelV1
+        elif config['type'] == 'image_v2':
+            ImageDenoiser = models.ImageDenoiserModelV2
+        else:
+            raise ValueError('Invalid denoiser type')
+        model = ImageDenoiser(
+            config['input_channels'],
+            config['mapping_out'],
+            config['depths'],
+            config['channels'],
+            config['self_attn_depths'],
+            config['cross_attn_depths'],
+            patch_size=config['patch_size'],
+            dropout_rate=config['dropout_rate'],
+            mapping_cond_dim=config['mapping_cond_dim'] + (9 if config['augment_wrapper'] else 0),
+            unet_cond_dim=config['unet_cond_dim'],
+            cross_cond_dim=config['cross_cond_dim'],
+            skip_stages=config['skip_stages'],
+            has_variance=config['has_variance'],
+        )
     if config['augment_wrapper']:
         model = augmentation.KarrasAugmentWrapper(model)
     return model

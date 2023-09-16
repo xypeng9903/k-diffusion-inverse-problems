@@ -124,7 +124,10 @@ class OpenAIDenoiser(DiscreteEpsDDPMDenoiser):
     def get_eps(self, *args, **kwargs):
         model_output = self.inner_model(*args, **kwargs)
         if self.has_learned_sigmas:
-            return model_output.chunk(2, dim=1)[0]
+            if kwargs.get('return_variance', False):
+                return model_output
+            else:
+                return model_output.chunk(2, dim=1)[0]
         return model_output
 
 
