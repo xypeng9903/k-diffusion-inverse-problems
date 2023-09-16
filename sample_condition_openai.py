@@ -91,15 +91,15 @@ def main():
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
-    p.add_argument('--steps', type=int, default=50,
+    p.add_argument('--steps', type=int, default=100,
                    help='the number of denoising steps')
-    p.add_argument('--guidance', type=str, choices=["I", "II", "mix"], default="I")
+    p.add_argument('--guidance', type=str, choices=["I", "II"], default="I")
     p.add_argument('--xstart-cov-type', type=str, choices=["convert", "pgdm", "dps", "diffpir", "analytic"], default="convert")
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--mle-sigma-thres', type=float, default=0.2)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition"))
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
-    p.add_argument('--sde', dest='sde', action='store_true')
+    p.add_argument('--ode', dest='ode', action='store_true')
 
     #-----------------------------------------
     # Setup unconditional model and test data
@@ -183,7 +183,7 @@ def main():
             def sample_fn(n):
                 x = torch.randn([n, model_config['input_channels'], size[0], size[1]], device=device) * sigma_max
                 sampler = partial(K.sampling.sample_euler, model, x, sigmas, disable=not accelerator.is_local_main_process)
-                if args.sde:
+                if not args.ode:
                     x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
                 else:
                     x_0 = sampler()     

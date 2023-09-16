@@ -16,14 +16,12 @@ class ConditionDenoiser(nn.Module):
 
     def __init__(
             self,
-            denoiser, 
             operator, 
             measurement, 
             guidance='I',
             device='cpu'
     ) -> None:
         super().__init__()
-        self.denoiser = denoiser
         self.operator = operator
         self.y = measurement
         self.guidance = guidance
@@ -86,8 +84,9 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
             recon_mse=None,
             device='cpu'
     ):
-        super().__init__(denoiser, operator, measurement, guidance, device)
+        super().__init__(operator, measurement, guidance, device)
 
+        self.denoiser = denoiser
         self.x0_cov_type = x0_cov_type
         self.lambda_ = lambda_
         self.mle_sigma_thres = mle_sigma_thres
@@ -101,7 +100,7 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
         denoiser_pred = self.denoiser(x, sigma, return_variance=True)
         x0_mean = denoiser_pred[0]
 
-        if self.xstart_cov_type == 'mle':
+        if self.x0_cov_type == 'mle':
             if sigma < self.mle_sigma_thres:
                 x0_var = denoiser_pred[1]  
             else:
@@ -111,17 +110,17 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
                     assert self.lambda_ is not None
                     x0_var = sigma.pow(2) / self.lambda_ 
 
-        elif self.xstart_cov_type == 'pgdm':
+        elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
-        elif self.xstart_cov_type == 'dps':
+        elif self.x0_cov_type == 'dps':
             x0_var = torch.zeros(1).to(self.device) 
 
-        elif self.xstart_cov_type == 'diffpir':
+        elif self.x0_cov_type == 'diffpir':
             assert self.lambda_ is not None
             x0_var = sigma.pow(2) / self.lambda_ 
             
-        elif self.xstart_cov_type == 'analytic':
+        elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
             if sigma < self.mle_sigma_thres:
@@ -155,8 +154,9 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             recon_mse=None, 
             device='cpu'
     ):
-        super().__init__(denoiser, operator, measurement, guidance, device)
+        super().__init__(operator, measurement, guidance, device)
 
+        self.denoiser = denoiser
         self.diffusion = diffusion
         self.guidance = guidance
         self.x0_cov_type = x0_cov_type
@@ -172,12 +172,12 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 self.recon_mse[key] = self.recon_mse[key].to(device)
 
 
-    def uncond_x0_mean_variance(self, x, sigma):
-        c_out, c_in = [utils.append_dims(x, x.ndim) for x in self.get_scalings(sigma)]
+    def uncond_x0_mean_var(self, x, sigma):
+        c_out, c_in = [utils.append_dims(x, x.ndim) for x in self.openai_denoiser.get_scalings(sigma)]
         t = self.openai_denoiser.sigma_to_t(sigma).long()
         D = self.diffusion
 
-        xprev_pred = D.p_mean_variance(self.inner_model, x * c_in, t)
+        xprev_pred = D.p_mean_variance(self.denoiser, x * c_in, t)
         x0_mean = xprev_pred['pred_xstart']
 
         if self.x0_cov_type == 'convert':
@@ -362,7 +362,7 @@ def _deblur_proximal(operator, y, x0_mean, x0_var):
         cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().cpu().numpy())[0]
         cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean) 
     
-    return cond_x0_mean.clip(-1, 1)
+    return cond_x0_mean
 
 
 @register_proximal_solver('gaussian_blur')

@@ -73,7 +73,7 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('--batch-size', type=int, default=1,
                    help='the batch size')
-    p.add_argument('--checkpoint', type=str, default="model_00270000.pth",
+    p.add_argument('--checkpoint', type=str, default="../model_zoo/model_00270000.pth",
                    help='the checkpoint to use')
     p.add_argument('--config', type=str, default="configs/config_128x128_ffhq_image_v2.json",
                    help='the model config')
@@ -82,13 +82,13 @@ def main():
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
-    p.add_argument('--steps', type=int, default=50,
+    p.add_argument('--steps', type=int, default=100,
                    help='the number of denoising steps')
     p.add_argument('--guidance', type=str, choices=["I", "II"], default="II")
     p.add_argument('--xstart-cov-type', type=str, choices=["mle", "pgdm", "dps", "diffpir", "analytic"], default="mle")
     p.add_argument('--lam', type=float, default=1)
     p.add_argument('--mle-sigma-thres', type=float, default=0.3)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_mle"))
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
 
@@ -191,7 +191,6 @@ def main():
                 for j, out in enumerate(hat_x0):
                     hat_x0_filename = os.path.join(args.logdir, f"{args.prefix}_img_{i}_hat_x0_sample_{j}.png")
                     K.utils.to_pil_image(out).save(hat_x0_filename)
-                # fig.savefig(os.path.join(args.logdir, f"{args.prefix}_img_{i}_progress.png"))
                 plt.close()
 
         avg_metrics = calculate_average_metric(metrics_list)
