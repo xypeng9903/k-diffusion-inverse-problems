@@ -92,7 +92,8 @@ class SuperResolutionOperator(LinearOperator):
 
     def forward(self, data, **kwargs):
         y = self.down_sample(data) 
-        y += self.sigma_s * torch.randn_like(y)
+        if not kwargs.get('noiseless', False):
+            y += self.sigma_s * torch.randn_like(y)
         k = self.get_kernel().to(self.device)
         self.pre_calculated = pre_calculate(y, k, self.scale_factor)
         return y
@@ -127,7 +128,9 @@ class MotionBlurOperator(LinearOperator):
     def forward(self, data, **kwargs):
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, _ = pre_calculate(data, k, 1)
-        y = ifft2(FB * fft2(data)).real + self.sigma_s * torch.randn_like(data)
+        y = ifft2(FB * fft2(data)).real
+        if not kwargs.get('noiseless', False):
+            y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
         return y
 
@@ -157,7 +160,9 @@ class GaussialBlurOperator(LinearOperator):
     def forward(self, data, **kwargs):
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, _ = pre_calculate(data, k, 1)
-        y = ifft2(FB * fft2(data)).real + self.sigma_s * torch.randn_like(data)
+        y = ifft2(FB * fft2(data)).real
+        if not kwargs.get('noiseless', False):
+            y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
         return y
 
@@ -182,7 +187,9 @@ class InpaintingOperator(LinearOperator):
             Compute D^T (Dx + n) to address vary-dimensionality, 
             which is equivalent to m \odot (x + n)
         '''
-        return (data + self.sigma_s * torch.randn_like(data)) * self.mask
+        if not kwargs.get('noiseless', False):
+            data += self.sigma_s * torch.randn_like(data)
+        return data * self.mask
     
     def transpose(self, data, **kwargs):
         return data

@@ -29,7 +29,6 @@ import yaml
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
 import os
-import matplotlib.pyplot as plt
 
 from functools import partial
 
@@ -91,11 +90,12 @@ def main():
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
-    p.add_argument('--steps', type=int, default=100,
+    p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
-    p.add_argument('--guidance', type=str, choices=["I", "II"], default="I")
+    p.add_argument('--guidance', type=str, choices=["I", "II", "dps"], default="I")
     p.add_argument('--xstart-cov-type', type=str, choices=["convert", "pgdm", "dps", "diffpir", "analytic"], default="convert")
     p.add_argument('--lam', type=float, default=None)
+    p.add_argument('--zeta', type=float, default=1)
     p.add_argument('--mle-sigma-thres', type=float, default=0.2)
     p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
@@ -168,21 +168,22 @@ def main():
             x0 = x0.to(device)
             measurement = operator.forward(x0)
             model = ConditionOpenAIDenoiser(
-                inner_model,
-                diffusion,
-                operator,
-                measurement,
-                args.guidance,
-                args.xstart_cov_type,
+                denoiser=inner_model,
+                diffusion=diffusion,
+                operator=operator,
+                measurement=measurement,
+                guidance=args.guidance,
+                x0_cov_type=args.xstart_cov_type,
                 recon_mse=recon_mse,
                 lambda_=args.lam,
+                zeta=args.zeta,
                 mle_sigma_thres=args.mle_sigma_thres,
                 device=device
             ).eval()
                 
             def sample_fn(n):
                 x = torch.randn([n, model_config['input_channels'], size[0], size[1]], device=device) * sigma_max
-                sampler = partial(K.sampling.sample_euler, model, x, sigmas, disable=not accelerator.is_local_main_process)
+                sampler = partial(K.sampling.sample_heun, model, x, sigmas, disable=not accelerator.is_local_main_process)
                 if not args.ode:
                     x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
                 else:
@@ -202,8 +203,6 @@ def main():
                 for j, out in enumerate(hat_x0):
                     hat_x0_filename = os.path.join(args.logdir, f"{args.prefix}_img_{i}_hat_x0_sample_{j}.png")
                     K.utils.to_pil_image(out).save(hat_x0_filename)
-                # fig.savefig(os.path.join(args.logdir, f"{args.prefix}_img_{i}_progress.png"))
-                plt.close()
 
         avg_metrics = calculate_average_metric(metrics_list)
         print(avg_metrics)

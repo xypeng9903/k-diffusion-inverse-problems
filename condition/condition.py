@@ -19,12 +19,14 @@ class ConditionDenoiser(nn.Module):
             operator, 
             measurement, 
             guidance='I',
+            zeta=1,
             device='cpu'
     ) -> None:
         super().__init__()
         self.operator = operator
         self.y = measurement
         self.guidance = guidance
+        self.zeta = zeta
         self.device = device
         
         if operator is not None:
@@ -50,10 +52,18 @@ class ConditionDenoiser(nn.Module):
                 uncond_x0_pred["var"]
             )
 
+        elif self.guidance == "dps":
+            x = x.requires_grad_()
+            x0_mean = self.uncond_x0_mean_var(x, sigma)['mean']
+            difference = self.y - self.operator.forward(x0_mean, noiseless=True)
+            norm = torch.linalg.norm(difference)
+            likelihood_score = -grad(norm, x)[0] * self.zeta
+            hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
+
         else:
             raise ValueError("Invalid guidance type.")
             
-        return hat_x0
+        return hat_x0.clip(-1, 1).detach()
 
     def uncond_x0_mean_var(self, x, sigma):
         raise NotImplementedError
@@ -61,12 +71,10 @@ class ConditionDenoiser(nn.Module):
     def _type_I_guidance(self, x0_mean, x0_var, x, sigma):
         mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
         likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0]
-        x0_mean = x0_mean + sigma.pow(2) * likelihood_score
-        return x0_mean.clip(-1, 1).detach()
+        return x0_mean + sigma.pow(2) * likelihood_score
 
     def _type_II_guidance(self, x0_mean, x0_var):
-        x0_mean = self.proximal_solver(self.operator, self.y, x0_mean.detach(), x0_var.detach())
-        return x0_mean.clip(-1, 1).detach()
+        return self.proximal_solver(self.operator, self.y, x0_mean.detach(), x0_var.detach())
 
 
 class ConditionImageDenoiserV2(ConditionDenoiser):
@@ -78,13 +86,14 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
             operator, 
             measurement, 
             guidance='I',
+            zeta=1,
             x0_cov_type='mle',
             mle_sigma_thres=0.2,
             lambda_=None,
             recon_mse=None,
             device='cpu'
     ):
-        super().__init__(operator, measurement, guidance, device)
+        super().__init__(operator, measurement, guidance, zeta, device)
 
         self.denoiser = denoiser
         self.x0_cov_type = x0_cov_type
@@ -109,17 +118,9 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
                     x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = None
 
-        elif self.x0_cov_type == 'pgdm':
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        elif self.x0_cov_type == 'dps':
-            x0_var = torch.zeros(1).to(self.device) 
-
-        elif self.x0_cov_type == 'diffpir':
-            assert self.lambda_ is not None
-            x0_var = sigma.pow(2) / self.lambda_ 
-            
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
@@ -131,6 +132,18 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
                     x0_var = sigma.pow(2) / self.lambda_
+                else:
+                    x0_var = None
+
+        elif self.x0_cov_type == 'pgdm':
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+
+        elif self.x0_cov_type == 'dps':
+            x0_var = torch.zeros(1).to(self.device) 
+
+        elif self.x0_cov_type == 'diffpir':
+            assert self.lambda_ is not None
+            x0_var = sigma.pow(2) / self.lambda_ 
 
         else:
             raise ValueError('Invalid posterior covariance type.')
@@ -148,13 +161,14 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             operator, 
             measurement, 
             guidance='I',
+            zeta=1,
             x0_cov_type='convert',
             mle_sigma_thres=0.2,
             lambda_=None,
             recon_mse=None, 
             device='cpu'
     ):
-        super().__init__(operator, measurement, guidance, device)
+        super().__init__(operator, measurement, guidance, zeta, device)
 
         self.denoiser = denoiser
         self.diffusion = diffusion
@@ -192,17 +206,9 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
                     x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = None
 
-        elif self.x0_cov_type == 'pgdm':
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        elif self.x0_cov_type == 'dps':
-            x0_var = torch.zeros(1).to(self.device) 
-
-        elif self.x0_cov_type == 'diffpir':
-            assert self.lambda_ is not None
-            x0_var = sigma.pow(2) / self.lambda_ 
-            
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
@@ -214,7 +220,19 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 elif self.guidance == "II":
                     assert self.lambda_ is not None
                     x0_var = sigma.pow(2) / self.lambda_
+                else:
+                    x0_var = None
 
+        elif self.x0_cov_type == 'pgdm':
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+
+        elif self.x0_cov_type == 'dps':
+            x0_var = torch.zeros(1).to(self.device) 
+
+        elif self.x0_cov_type == 'diffpir':
+            assert self.lambda_ is not None
+            x0_var = sigma.pow(2) / self.lambda_ 
+            
         else:
             raise ValueError('Invalid posterior covariance type.')
                         
