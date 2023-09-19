@@ -92,7 +92,7 @@ def main():
                    help='the output prefix')
     p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
-    p.add_argument('--guidance', type=str, choices=["I", "II", "dps"], default="I")
+    p.add_argument('--guidance', type=str, default="I")
     p.add_argument('--xstart-cov-type', type=str, choices=["convert", "pgdm", "dps", "diffpir", "analytic"], default="convert")
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--zeta', type=float, default=1)

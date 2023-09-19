@@ -15,67 +15,109 @@ class ConditionDenoiser(nn.Module):
     '''Approximate E[x0|xt, y] given denoiser E[x0|xt]'''
 
     def __init__(
-            self,
-            operator, 
-            measurement, 
-            guidance='I',
-            zeta=1,
-            device='cpu'
-    ) -> None:
+        self,
+        operator, 
+        measurement, 
+        guidance,
+        device='cpu',
+        zeta=None,
+        lambda_=None,
+        mle_sigma_thres=0.2
+    ):
         super().__init__()
         self.operator = operator
         self.y = measurement
         self.guidance = guidance
         self.zeta = zeta
+        self.lambda_ = lambda_
         self.device = device
-        
-        if operator is not None:
-            self.mat_solver = __MAT_SOLVER__[operator.name]
-            self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
+    
+        self.mat_solver = __MAT_SOLVER__[operator.name]
+        self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
     def forward(self, x, sigma):
         assert x.shape[0] == 1
-        if self.guidance == "I":
-            x = x.requires_grad_()
-            uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
-            hat_x0 =  self._type_I_guidance(
-                uncond_x0_pred["mean"],
-                uncond_x0_pred["var"],
-                x,
-                sigma
-            )
+
+        if self.guidance == "dps":
+            hat_x0 = self._dps_guidance_impl(x, sigma)
+
+        elif self.guidance == "pgdm":
+            hat_x0 = self._pgdm_guidance_impl(x, sigma) 
+
+        elif self.guidance == "diffpir":
+            hat_x0 = self._diffpir_guidance_impl(x, sigma)
+        
+        elif self.guidance == "I":
+            hat_x0 = self._type_I_guidance_impl(x, sigma)
 
         elif self.guidance == "II":
-            uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
-            hat_x0 =  self._type_II_guidance(
-                uncond_x0_pred["mean"],
-                uncond_x0_pred["var"]
-            )
+            hat_x0 = self._type_II_guidance_impl(x, sigma)
 
-        elif self.guidance == "dps":
-            x = x.requires_grad_()
-            x0_mean = self.uncond_x0_mean_var(x, sigma)['mean']
-            difference = self.y - self.operator.forward(x0_mean, noiseless=True)
-            norm = torch.linalg.norm(difference)
-            likelihood_score = -grad(norm, x)[0] * self.zeta
-            hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
+        elif self.guidance == "dps+mle":
+            if sigma < self.mle_sigma_thres:
+                hat_x0 = self._type_I_guidance_impl(x, sigma)
+            else:
+                hat_x0 = self._dps_guidance_impl(x, sigma)
+
+        elif self.guidance == "pgdm+mle":
+            if sigma < self.mle_sigma_thres:
+                hat_x0 = self._type_I_guidance_impl(x, sigma)
+            else:
+                hat_x0 = self._pgdm_guidance_impl(x, sigma)
+
+        elif self.guidance == "diffpir+mle":
+            if sigma < self.mle_sigma_thres:
+                hat_x0 = self._type_II_guidance_impl(x, sigma)
+            else:
+                hat_x0 = self._diffpir_guidance_impl(x, sigma)
 
         else:
             raise ValueError("Invalid guidance type.")
             
         return hat_x0.clip(-1, 1).detach()
 
+    def _dps_guidance_impl(self, x, sigma):
+        assert self.zeta is not None
+        x = x.requires_grad_()
+        x0_mean = self.uncond_x0_mean_var(x, sigma)['mean']
+        difference = self.y - self.operator.forward(x0_mean, noiseless=True)
+        norm = torch.linalg.norm(difference)
+        likelihood_score = -grad(norm, x)[0] * self.zeta
+        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
+        return hat_x0
+
+    def _pgdm_guidance_impl(self, x, sigma):
+        x = x.requires_grad_()
+        x0_mean = self.uncond_x0_mean_var(x, sigma)['mean']
+        x0_var = sigma.pow(2) / (1 + sigma.pow(2))
+        mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
+        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0]
+        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score * x0_var
+        return hat_x0
+
+    def _diffpir_guidance_impl(self, x, sigma):
+        assert self.lambda_ is not None
+        x0_mean = self.uncond_x0_mean_var(x, sigma)['mean']
+        x0_var = sigma.pow(2) / self.lambda_
+        hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, x0_var)
+        return hat_x0
+
+    def _type_I_guidance_impl(self, x, sigma):
+        x = x.requires_grad_()
+        uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
+        mat = self.mat_solver(self.operator, self.y, uncond_x0_pred["mean"], uncond_x0_pred["var"])
+        likelihood_score = grad((mat.detach() * uncond_x0_pred["mean"]).sum(), x)[0]
+        hat_x0 = uncond_x0_pred["mean"] + sigma.pow(2) * likelihood_score
+        return hat_x0
+
+    def _type_II_guidance_impl(self, x, sigma):
+        uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
+        hat_x0 = self.proximal_solver(self.operator, self.y, uncond_x0_pred["mean"], uncond_x0_pred["var"])
+        return hat_x0
+
     def uncond_x0_mean_var(self, x, sigma):
         raise NotImplementedError
     
-    def _type_I_guidance(self, x0_mean, x0_var, x, sigma):
-        mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
-        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0]
-        return x0_mean + sigma.pow(2) * likelihood_score
-
-    def _type_II_guidance(self, x0_mean, x0_var):
-        return self.proximal_solver(self.operator, self.y, x0_mean.detach(), x0_var.detach())
-
 
 class ConditionImageDenoiserV2(ConditionDenoiser):
     '''Approximate E[x0|xt, y] given denoiser E[x0|xt]'''
@@ -93,7 +135,15 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
             recon_mse=None,
             device='cpu'
     ):
-        super().__init__(operator, measurement, guidance, zeta, device)
+        super().__init__(
+            operator=operator, 
+            measurement=measurement, 
+            guidance=guidance,
+            device=device,
+            zeta=zeta,
+            lambda_=lambda_,
+            mle_sigma_thres=mle_sigma_thres
+        )
 
         self.denoiser = denoiser
         self.x0_cov_type = x0_cov_type
@@ -110,30 +160,12 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
         x0_mean = denoiser_pred[0]
 
         if self.x0_cov_type == 'mle':
-            if sigma < self.mle_sigma_thres:
-                x0_var = denoiser_pred[1]  
-            else:
-                if self.guidance == "I":
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-                elif self.guidance == "II":
-                    assert self.lambda_ is not None
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = None
+            x0_var = denoiser_pred[1]  
 
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-            if sigma < self.mle_sigma_thres:
-                x0_var = self.recon_mse['mse_list'][idx]
-            else:
-                if self.guidance == "I":
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2))
-                elif self.guidance == "II":
-                    assert self.lambda_ is not None
-                    x0_var = sigma.pow(2) / self.lambda_
-                else:
-                    x0_var = None
+            x0_var = self.recon_mse['mse_list'][idx]
 
         elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
@@ -168,7 +200,15 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             recon_mse=None, 
             device='cpu'
     ):
-        super().__init__(operator, measurement, guidance, zeta, device)
+        super().__init__(
+            operator=operator, 
+            measurement=measurement, 
+            guidance=guidance,
+            device=device,
+            zeta=zeta,
+            lambda_=lambda_,
+            mle_sigma_thres=mle_sigma_thres
+        )
 
         self.denoiser = denoiser
         self.diffusion = diffusion
@@ -195,33 +235,15 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
         x0_mean = xprev_pred['pred_xstart']
 
         if self.x0_cov_type == 'convert':
-            if sigma < self.mle_sigma_thres:
-                x0_var = (
-                    (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
-                    / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-                ).clip(min=0) # Theorem 1         
-            else:
-                if self.guidance == "I":
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-                elif self.guidance == "II":
-                    assert self.lambda_ is not None
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = None
+            x0_var = (
+                (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
+                / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
+            ).clip(min=1e-6) # Theorem 1         
 
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-            if sigma < self.mle_sigma_thres:
-                x0_var = self.recon_mse['mse_list'][idx]
-            else:
-                if self.guidance == "I":
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2))
-                elif self.guidance == "II":
-                    assert self.lambda_ is not None
-                    x0_var = sigma.pow(2) / self.lambda_
-                else:
-                    x0_var = None
+            x0_var = self.recon_mse['mse_list'][idx]
 
         elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
@@ -268,7 +290,7 @@ def _deblur_mat(operator, y, x0_mean, x0_var):
     FB, FBC, F2B, FBFy = operator.pre_calculated
 
     if x0_var.numel() == 1:
-        mat = ifft2((FBFy - F2B * fft2(x0_mean)) / (sigma_s.pow(2) + x0_var.mean() * F2B)).real
+        mat = ifft2((FBFy - F2B * fft2(x0_mean)) / (sigma_s.pow(2) + x0_var * F2B)).real
 
     else:
         class A(LinearOperator):
@@ -309,8 +331,8 @@ def super_resolution_mat(operator, y, x0_mean, x0_var):
     FB, FBC, F2B, FBFy = operator.pre_calculated
     
     if x0_var.numel() == 1:
-        invW = torch.mean(sr.splits(x0_var.mean() * F2B, sf), dim=-1, keepdim=False)
-        mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + invW)).repeat(1, 1, sf, sf)).real
+        invW = torch.mean(sr.splits(F2B, sf), dim=-1, keepdim=False)
+        mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + x0_var * invW)).repeat(1, 1, sf, sf)).real
     
     else:
         class A(LinearOperator):

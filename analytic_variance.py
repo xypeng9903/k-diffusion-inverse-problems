@@ -44,38 +44,6 @@ def save_yaml(data: dict, file_path: str):
         yaml.dump(data, file)
 
 
-def compute_metrics(hat_x0, x0, loss_fn_vgg):
-    def to_eval(x: torch.Tensor):
-        return (x[0] / 2 + 0.5).clip(0, 1).detach()
-    psnr = peak_signal_noise_ratio(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), data_range=1).item()
-    ssim = structural_similarity(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), channel_axis=0, data_range=1).item()
-    lpips = loss_fn_vgg(to_eval(x0), to_eval(hat_x0))[0, 0, 0, 0].item()
-    return {
-        'psnr': psnr, 
-        'ssim': ssim, 
-        'lpips': lpips
-    }
-
-
-def calculate_average_metric(metrics_list):
-    avg_dict = {}
-    count_dict = {}
-
-    for metrics in metrics_list:
-        for key, value in metrics.items():
-            if key not in avg_dict:
-                avg_dict[key] = 0.0
-                count_dict[key] = 0
-            avg_dict[key] += value
-            count_dict[key] += 1
-
-    for key in avg_dict:
-        if count_dict[key] > 0:
-            avg_dict[key] /= count_dict[key]
-
-    return avg_dict
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
