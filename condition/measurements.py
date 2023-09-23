@@ -187,9 +187,10 @@ class InpaintingOperator(LinearOperator):
             Compute D^T (Dx + n) to address vary-dimensionality, 
             which is equivalent to m \odot (x + n)
         '''
+        y = data.clone()
         if not kwargs.get('noiseless', False):
-            data += self.sigma_s * torch.randn_like(data)
-        return data * self.mask
+            y += self.sigma_s * torch.randn_like(y)
+        return y * self.mask
     
     def transpose(self, data, **kwargs):
         return data
