@@ -1,2 +1,4 @@
 */__pycache__
-runs
+runs/
+nohup.out
+runs-hpc/

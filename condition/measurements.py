@@ -182,7 +182,7 @@ class InpaintingOperator(LinearOperator):
         self.in_shape = (1, 3, mask_opt['image_size'], mask_opt['image_size'])
         self.mask = self.generate_mask(mask_opt)
     
-    def forward(self, data, **kwargs):        
+    def forward(self, data: torch.Tensor, **kwargs):        
         '''
             Compute D^T (Dx + n) to address vary-dimensionality, 
             which is equivalent to m \odot (x + n)
