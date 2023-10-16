@@ -182,14 +182,15 @@ class InpaintingOperator(LinearOperator):
         self.in_shape = (1, 3, mask_opt['image_size'], mask_opt['image_size'])
         self.mask = self.generate_mask(mask_opt)
     
-    def forward(self, data, **kwargs):        
+    def forward(self, data: torch.Tensor, **kwargs):        
         '''
             Compute D^T (Dx + n) to address vary-dimensionality, 
             which is equivalent to m \odot (x + n)
         '''
+        y = data.clone()
         if not kwargs.get('noiseless', False):
-            data += self.sigma_s * torch.randn_like(data)
-        return data * self.mask
+            y += self.sigma_s * torch.randn_like(y)
+        return y * self.mask
     
     def transpose(self, data, **kwargs):
         return data

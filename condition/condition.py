@@ -31,6 +31,7 @@ class ConditionDenoiser(nn.Module):
         self.zeta = zeta
         self.lambda_ = lambda_
         self.device = device
+        self.mle_sigma_thres = mle_sigma_thres
     
         self.mat_solver = __MAT_SOLVER__[operator.name]
         self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
@@ -235,15 +236,31 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
         x0_mean = xprev_pred['pred_xstart']
 
         if self.x0_cov_type == 'convert':
-            x0_var = (
-                (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
-                / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-            ).clip(min=1e-6) # Theorem 1         
+            if sigma < self.mle_sigma_thres:
+                x0_var = (
+                    (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
+                    / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
+                ).clip(min=1e-6).detach() # Theorem 1        
+            else:
+                if self.guidance == "I":
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                elif self.guidance == "II":
+                    x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
-            idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-            x0_var = self.recon_mse['mse_list'][idx]
+            if sigma < self.mle_sigma_thres:
+                idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
+                x0_var = self.recon_mse['mse_list'][idx]
+            else:
+                if self.guidance == "I":
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                elif self.guidance == "II":
+                    x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
@@ -300,10 +317,10 @@ def _deblur_mat(operator, y, x0_mean, x0_var):
             def _matvec(self, u):
                 u = torch.Tensor(u).reshape(y.shape).to(y.device)
                 u = sigma_s**2 * u + ifft2(FB * fft2(x0_var * ifft2(FBC * fft2(u))))
-                u = u.real.flatten().cpu().numpy()
+                u = u.real.flatten().detach().cpu().numpy()
                 return u
         
-        b = (y - ifft2(FB * fft2(x0_mean))).real.flatten().detach().cpu().numpy()
+        b = (y - ifft2(FB * fft2(x0_mean))).real.flatten().detach().detach().cpu().numpy()
         u = cg(A(), b)[0]
         u = torch.Tensor(u.reshape(y.shape)).to(y.device)
         mat = ifft2(FBC * fft2(u)).real
@@ -342,10 +359,10 @@ def super_resolution_mat(operator, y, x0_mean, x0_var):
             def _matvec(self, u):
                 u = torch.Tensor(u).reshape(y.shape).to(y.device)
                 u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(x0_var * ifft2(FBC * fft2(sr.upsample(u, sf))))), sf)
-                u = u.real.flatten().cpu().numpy()
+                u = u.real.flatten().detach().cpu().numpy()
                 return u
         
-        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().cpu().numpy()
+        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().detach().cpu().numpy()
         u = cg(A(), b)[0]
         u = torch.Tensor(u.reshape(y.shape)).to(y.device)
         mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
@@ -395,11 +412,11 @@ def _deblur_proximal(operator, y, x0_mean, x0_var):
             def _matvec(self, x):
                 x = torch.Tensor(x).reshape(x0_mean.shape).to(x0_mean.device)
                 x = sigma_s**2 * x + x0_var * ifft2(F2B * fft2(x))
-                x = x.real.flatten().cpu().numpy()
+                x = x.real.flatten().detach().cpu().numpy()
                 return x
             
-        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().cpu().numpy()
-        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().cpu().numpy())[0]
+        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().detach().cpu().numpy()
+        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy())[0]
         cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean) 
     
     return cond_x0_mean
@@ -434,11 +451,11 @@ def super_resolution_proximal(operator, y, x0_mean, x0_var):
             def _matvec(self, x):
                 x = torch.Tensor(x).reshape(x0_mean.shape).to(x0_mean.device)
                 x = sigma_s**2 * x + x0_var * ifft2(FBC * fft2(sr.upsample(sr.downsample(ifft2(FB * fft2(x)), sf), sf)))
-                x = x.real.flatten().cpu().numpy()
+                x = x.real.flatten().detach().cpu().numpy()
                 return x
             
-        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().cpu().numpy()
-        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().cpu().numpy())[0]
+        b = (x0_var * ifft2(FBFy) + sigma_s**2 * x0_mean).real.flatten().detach().cpu().numpy()
+        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy())[0]
         cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean.device)
 
     return cond_x0_mean

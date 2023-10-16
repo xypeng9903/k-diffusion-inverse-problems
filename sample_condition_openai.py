@@ -50,11 +50,9 @@ def compute_metrics(hat_x0, x0, loss_fn_vgg):
     psnr = peak_signal_noise_ratio(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), data_range=1).item()
     ssim = structural_similarity(to_eval(x0).cpu().numpy(), to_eval(hat_x0).cpu().numpy(), channel_axis=0, data_range=1).item()
     lpips = loss_fn_vgg(to_eval(x0), to_eval(hat_x0))[0, 0, 0, 0].item()
-    return {
-        'psnr': psnr, 
-        'ssim': ssim, 
-        'lpips': lpips
-    }
+    metrics = {'psnr': psnr, 'ssim': ssim, 'lpips': lpips}
+    print(metrics)
+    return metrics
 
 
 def calculate_average_metric(metrics_list):
