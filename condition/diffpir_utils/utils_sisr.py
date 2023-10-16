@@ -63,6 +63,7 @@ def downsample(x, sf=3):
 
 
 def data_solution(x, FB, FBC, F2B, FBFy, alpha, sf):
+    alpha = alpha.clip(min=5e-2)
     FR = FBFy + torch.fft.fftn(alpha*x, dim=(-2,-1))
     x1 = FB.mul(FR)
     FBR = torch.mean(splits(x1, sf), dim=-1, keepdim=False)
@@ -93,8 +94,6 @@ def pre_calculate(x, k, sf):
     STy = upsample(x, sf=sf)
     FBFy = FBC*torch.fft.fftn(STy, dim=(-2, -1))
     return FB, FBC, F2B, FBFy
-
-
 
 
 def classical_degradation(x, k, sf=3):

@@ -45,10 +45,11 @@ class LinearOperator(ABC):
         # calculate A * X
         pass
 
-    @abstractmethod
-    def transpose(self, data, **kwargs):
-        # calculate A^T * X
-        pass
+    def transpose(self, y):
+        ones = torch.ones_like(y)
+        return torch.autograd.functional.vjp(
+            partial(self.forward, noisess=True), ones, y
+        )[1]
     
     def ortho_project(self, data, **kwargs):
         # calculate (I - A^T * A)X
@@ -98,9 +99,6 @@ class SuperResolutionOperator(LinearOperator):
         self.pre_calculated = pre_calculate(y, k, self.scale_factor)
         return y
 
-    def transpose(self, data, **kwargs):
-        return self.up_sample(data)
-
     def project(self, data, measurement, **kwargs):
         return data - self.transpose(self.forward(data)) + self.transpose(measurement)
     
@@ -117,11 +115,7 @@ class MotionBlurOperator(LinearOperator):
                                kernel_size=kernel_size,
                                std=intensity,
                                device=device).to(device)  # should we keep this device term?
-
-        # self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
         self.kernel = np.load('./condition/kernels/motion_ks61_std0.5.npy')
-        # kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
-        # self.conv.update_weights(kernel)
         self.conv.update_weights(self.kernel)
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
 
@@ -133,9 +127,6 @@ class MotionBlurOperator(LinearOperator):
             y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
         return y
-
-    def transpose(self, data, **kwargs):
-        return data
 
     def get_kernel(self):
         # kernel = torch.Tensor(self.kernel.kernelMatrix).to(self.device)
@@ -165,10 +156,7 @@ class GaussialBlurOperator(LinearOperator):
             y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
         return y
-
-    def transpose(self, data, **kwargs):
-        return data
-
+    
     def get_kernel(self):
         return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
 

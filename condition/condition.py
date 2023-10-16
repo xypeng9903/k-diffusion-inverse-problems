@@ -106,14 +106,14 @@ class ConditionDenoiser(nn.Module):
     def _type_I_guidance_impl(self, x, sigma):
         x = x.requires_grad_()
         uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
-        mat = self.mat_solver(self.operator, self.y, uncond_x0_pred["mean"], uncond_x0_pred["var"])
+        mat = self.mat_solver(self.operator, self.y, uncond_x0_pred["mean"].detach(), uncond_x0_pred["var"].detach())
         likelihood_score = grad((mat.detach() * uncond_x0_pred["mean"]).sum(), x)[0]
         hat_x0 = uncond_x0_pred["mean"] + sigma.pow(2) * likelihood_score
         return hat_x0
 
     def _type_II_guidance_impl(self, x, sigma):
         uncond_x0_pred = self.uncond_x0_mean_var(x, sigma)
-        hat_x0 = self.proximal_solver(self.operator, self.y, uncond_x0_pred["mean"], uncond_x0_pred["var"])
+        hat_x0 = self.proximal_solver(self.operator, self.y, uncond_x0_pred["mean"].detach(), uncond_x0_pred["var"].detach())
         return hat_x0
 
     def uncond_x0_mean_var(self, x, sigma):
@@ -240,7 +240,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 x0_var = (
                     (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
                     / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-                ).clip(min=1e-6).detach() # Theorem 1        
+                ).clip(min=1e-6).detach() # Eq. (22)       
             else:
                 if self.guidance == "I":
                     x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
