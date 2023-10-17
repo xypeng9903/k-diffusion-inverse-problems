@@ -129,7 +129,6 @@ class MotionBlurOperator(LinearOperator):
         return y
 
     def get_kernel(self):
-        # kernel = torch.Tensor(self.kernel.kernelMatrix).to(self.device)
         kernel = torch.Tensor(self.kernel).to(self.device)
         return kernel.view(1, 1, self.kernel_size, self.kernel_size)
 
