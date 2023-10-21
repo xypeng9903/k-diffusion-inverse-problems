@@ -307,7 +307,7 @@ def _deblur_mat(operator, y, x0_mean, x0_var):
     FB, FBC, F2B, FBFy = operator.pre_calculated
 
     if x0_var.numel() == 1:
-        mat = ifft2((FBFy - F2B * fft2(x0_mean)) / (sigma_s.pow(2) + x0_var * F2B)).real
+        mat = ifft2(FBC / (sigma_s.pow(2) + x0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
 
     else:
         class A(LinearOperator):
