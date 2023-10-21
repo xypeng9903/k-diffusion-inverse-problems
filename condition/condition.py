@@ -308,7 +308,7 @@ def _deblur_mat(operator, y, x0_mean, x0_var):
 
     if x0_var.numel() == 1:
         mat = ifft2(FBC / (sigma_s.pow(2) + x0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
-
+        # Why "mat = ifft2((FBFy - F2B * fft2(x0_mean)) / (sigma_s.pow(2) + x0_var * F2B)).real" has numerical issue?
     else:
         class A(LinearOperator):
             def __init__(self):
@@ -320,7 +320,7 @@ def _deblur_mat(operator, y, x0_mean, x0_var):
                 u = u.real.flatten().detach().cpu().numpy()
                 return u
         
-        b = (y - ifft2(FB * fft2(x0_mean))).real.flatten().detach().detach().cpu().numpy()
+        b = (y - ifft2(FB * fft2(x0_mean))).real.flatten().detach().cpu().numpy()
         u = cg(A(), b)[0]
         u = torch.Tensor(u.reshape(y.shape)).to(y.device)
         mat = ifft2(FBC * fft2(u)).real
@@ -362,7 +362,7 @@ def super_resolution_mat(operator, y, x0_mean, x0_var):
                 u = u.real.flatten().detach().cpu().numpy()
                 return u
         
-        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().detach().cpu().numpy()
+        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().cpu().numpy()
         u = cg(A(), b)[0]
         u = torch.Tensor(u.reshape(y.shape)).to(y.device)
         mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
