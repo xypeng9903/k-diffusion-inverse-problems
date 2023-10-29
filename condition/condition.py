@@ -240,7 +240,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 x0_var = (
                     (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
                     / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-                ).clip(min=1e-6).detach() # Eq. (22)       
+                ).clip(min=1e-6) # Eq. (22)       
             else:
                 if self.guidance == "I":
                     x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
@@ -295,6 +295,7 @@ def register_mat_solver(name):
 @register_mat_solver('inpainting')
 @torch.no_grad()
 def inpainting_mat(operator, y, x0_mean, x0_var):
+    # The form of the solution in inpainting is the same for isotrophic and diagnoal posterior covariance
     mask = operator.mask
     sigma_s = operator.sigma_s.clip(min=0.001)
     mat =  (mask * y - mask * x0_mean) / (sigma_s.pow(2) + x0_var)
@@ -390,6 +391,7 @@ def register_proximal_solver(name):
 
 @register_proximal_solver('inpainting')
 def inpainting_proximal(operator, y, x0_mean, x0_var):
+    # The form of the solution in inpainting is the same for isotrophic and diagnoal posterior covariance
     mask = operator.mask
     sigma_s = operator.sigma_s.clip(min=0.001)
     return (x0_var * mask * y + sigma_s**2 * x0_mean) / (x0_var * mask + sigma_s**2)
