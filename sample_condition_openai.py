@@ -95,7 +95,7 @@ def main():
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--zeta', type=float, default=1)
     p.add_argument('--mle-sigma-thres', type=float, default=0.2)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai"))
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
 
