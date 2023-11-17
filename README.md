@@ -4,11 +4,11 @@
 From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkelbSX3xGZh?usp=sharing), download the FFHQ checkpoint "ffhq_10m.pt", rename to "diffusion_ffhq_10m.pt", and paste it to ../model_zoo
 
 ### 2) Setup conda envrionment
-Change current directory to src and run
+For creating the conda environment and installing dependencies run
 ```
 conda env create -f environment.yml
 ```
-for creating the conda environment and installing dependencies. Then activate the environment by
+Then activate the environment by
 ```
 conda activate k-diffusion
 ```
