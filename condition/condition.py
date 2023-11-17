@@ -292,6 +292,17 @@ def register_mat_solver(name):
     return wrapper
 
 
+@register_mat_solver('colorization')
+@torch.no_grad()
+def colorization_mat(operator, y, x0_mean, x0_var):
+    # The form of the solution in colorization is the same for isotrophic and diagnoal posterior covariance
+    if x0_var.numel() == 1:
+        x0_var = x0_var * torch.ones_like(x0_mean)
+    sigma_s = operator.sigma_s.clip(min=0.001)
+    mat =  ((y - operator.forward(x0_mean, noiseless=True)) / (sigma_s.pow(2) + x0_var.mean(dim=[1]) / 3)).repeat(1, 3, 1, 1) / 3
+    return mat
+
+
 @register_mat_solver('inpainting')
 @torch.no_grad()
 def inpainting_mat(operator, y, x0_mean, x0_var):
@@ -387,6 +398,33 @@ def register_proximal_solver(name):
         __PROXIMAL_SOLVER__[name] = func
         return func
     return wrapper
+
+
+@register_proximal_solver('colorization')
+def colorization_proximal(operator, y, x0_mean, x0_var):
+    sigma_s = operator.sigma_s.clip(min=0.001)
+
+    if x0_var.numel() == 1:
+        rho = (sigma_s.pow(2) / x0_var.mean()).clip(min=0.001)
+        d = y.repeat(1, 3, 1, 1) / 3 / rho + x0_mean 
+        cond_x0_mean = d - ((d.mean(dim=[1]).repeat(1, 3, 1, 1) / 3) / (1/3 + rho))
+
+    else:
+        class A(LinearOperator):
+            def __init__(self):
+                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+
+            def _matvec(self, x):
+                x = torch.Tensor(x).reshape(x0_mean.shape).to(x0_mean.device)
+                x = x / x0_var * sigma_s**2 + (x0_mean.mean(dim=[1]).repeat(1, 3, 1, 1) / 3) 
+                x = x.flatten().detach().cpu().numpy()
+                return x
+            
+        b = (y.repeat(1, 3, 1, 1) / 3 + x0_mean / x0_var * sigma_s**2).flatten().detach().cpu().numpy()
+        cond_x0_mean = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), maxiter=50)[0]
+        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(x0_mean.device)
+
+    return cond_x0_mean
 
 
 @register_proximal_solver('inpainting')

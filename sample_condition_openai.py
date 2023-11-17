@@ -98,6 +98,7 @@ def main():
     p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
+    p.add_argument('--euler', dest='euler', action='store_true')
 
     #-----------------------------------------
     # Setup unconditional model and test data
@@ -164,7 +165,7 @@ def main():
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
             x0 = x0.to(device)
-            measurement = operator.forward(x0)
+            measurement = operator.forward(x0.clone())
             model = ConditionOpenAIDenoiser(
                 denoiser=inner_model,
                 diffusion=diffusion,
@@ -181,7 +182,8 @@ def main():
                 
             def sample_fn(n):
                 x = torch.randn([n, model_config['input_channels'], size[0], size[1]], device=device) * sigma_max
-                sampler = partial(K.sampling.sample_heun, model, x, sigmas, disable=not accelerator.is_local_main_process)
+                sampler = partial(K.sampling.sample_heun if not args.euler else K.sampling.sample_euler,
+                                  model, x, sigmas, disable=not accelerator.is_local_main_process)
                 if not args.ode:
                     x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
                 else:

@@ -46,7 +46,7 @@ class LinearOperator(ABC):
         pass
 
     def transpose(self, y):
-        ones = torch.ones_like(y)
+        ones = torch.ones(1, 3, 256, 256).to(y.device)
         return torch.autograd.functional.vjp(
             partial(self.forward, noisess=True), ones, y
         )[1]
@@ -76,6 +76,19 @@ class DenoiseOperator(LinearOperator):
 
     def project(self, data):
         return data
+    
+
+@register_operator(name='colorization')
+class ColorizationOperator(LinearOperator):
+    def __init__(self, sigma_s, device):
+        self.device = device
+        self.sigma_s = torch.Tensor([sigma_s]).to(device)
+        
+    def forward(self, data, **kwargs):
+        y = data.mean(dim=[1])
+        if not kwargs.get('noiseless', False):
+            y += self.sigma_s * torch.randn_like(y)
+        return y
 
 
 @register_operator(name='super_resolution')
