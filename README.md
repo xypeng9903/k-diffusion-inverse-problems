@@ -91,6 +91,8 @@ From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkel
 To run guidance based on analytic posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to "./runs".
 
 ### Reproduce Results
+From the [link](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link), download the validation data (the first 100 images from [FFHQ](https://github.com/NVlabs/ffhq-dataset) and [ImageNet](https://image-net.org/) datasets), unzip and paste it to "../data".
+
 For reproducing results on FFHQ dataset in Table 3, run
 ```bash
 bash quick_start/eval_guidance_I.sh ffhq
