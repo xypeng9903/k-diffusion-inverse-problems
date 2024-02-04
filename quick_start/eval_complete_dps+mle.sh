@@ -13,28 +13,28 @@ fi
 
 for ZETA in 1e0 1e1 1e2 1e3 1e4 1e5
 do 
-    # python sample_condition_openai.py \
-    # --save-img \
-    # --ode \
-    # --guidance dps+mle \
-    # --xstart-cov-type ${COV} \
-    # --config ${CONFIG} \
-    # --checkpoint ${CHECKPOINT} \
-    # --operator-config configs/gaussian_deblur_config.yaml \
-    # --logdir runs/sample_condition_openai/dps+mle/${DATASET}/gaussian_deblur/${COV}/zeta_${ZETA} \
-    # --zeta ${ZETA} \
-    # --mle-sigma-thres 0.2
+    python sample_condition_openai.py \
+    --save-img \
+    --ode \
+    --guidance dps+mle \
+    --xstart-cov-type ${COV} \
+    --config ${CONFIG} \
+    --checkpoint ${CHECKPOINT} \
+    --operator-config configs/gaussian_deblur_config.yaml \
+    --logdir runs/sample_condition_openai/dps+mle/${DATASET}/gaussian_deblur/${COV}/zeta_${ZETA} \
+    --zeta ${ZETA} \
+    --mle-sigma-thres 0.2
 
-    # python sample_condition_openai.py \
-    # --save-img \
-    # --ode \
-    # --guidance dps+mle \
-    # --xstart-cov-type ${COV} \
-    # --config ${CONFIG} \
-    # --checkpoint ${CHECKPOINT} \
-    # --operator-config configs/motion_deblur_config.yaml \
-    # --logdir runs/sample_condition_openai/dps+mle/${DATASET}/motion_deblur/${COV}/zeta_${ZETA} \
-    # --zeta ${ZETA} 
+    python sample_condition_openai.py \
+    --save-img \
+    --ode \
+    --guidance dps+mle \
+    --xstart-cov-type ${COV} \
+    --config ${CONFIG} \
+    --checkpoint ${CHECKPOINT} \
+    --operator-config configs/motion_deblur_config.yaml \
+    --logdir runs/sample_condition_openai/dps+mle/${DATASET}/motion_deblur/${COV}/zeta_${ZETA} \
+    --zeta ${ZETA} 
 
     python sample_condition_openai.py \
     --save-img \
