@@ -17,7 +17,7 @@ ___________
   - [Unified Intepretation of Diffusion-based Solvers to Inverse Problems](#unified-interpretation-of-diffusion-based-solvers-to-inverse-problems)
   - [Solving Inverse Problems With Optimal Posterior Covariance](#solving-inverse-problems-with-optimal-posterior-covariance)
 - [Setting Up](#setting-up)
-  - [Clone and Install](#clone-and-install)
+  - [Setup Conda Environment](#setup-conda-environment)
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
 - [Citation](#citation)
@@ -74,7 +74,7 @@ $$
 
 
 ## Setting Up
-### Clone and Install
+### Setup Conda Environment
 For creating the conda environment and installing dependencies run
 ```
 conda env create -f environment.yml
