@@ -59,7 +59,7 @@ which can be intepreted as compute the mean of an approximate distribution $q_t(
 
 ### Solving Inverse Problems With Optimal Posterior Covariance
 
-In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q(x_0|x_t)=\mathcal{N}(\mu(x_t), \Sigma(x_t))$, such that
+In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(x_0|x_t)=\mathcal{N}(\mu_t(x_t), \Sigma_t(x_t))$, such that
 
 **Type I guidance.** The likelihood is approximated in a similar way by Gaussian marginalization:
 
