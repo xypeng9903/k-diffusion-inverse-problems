@@ -37,18 +37,23 @@ covariances. Experimental results demonstrate that the proposed methods signific
 We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
 **Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi\text{GDM}$](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
+
 $$
 \mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
 $$
+
 where $p_t(y|x_t)$ is given by an intractable integral $\mathbb{E}_{p_t(x_0|x_t)}[p(y|x_0)]$. By introducing an isotrophic Gaussian approximation $q_t(x_0|x_t)=\mathcal{N}(\mathbb{E}[x_0|x_t], r_t^2 I)$ for $p_t(x_0|x_t)$, we can obtain the following approximation by Gaussian marginalization:
+
 $$
 p_t(y|x_t) \approx \mathcal{N}(y|A\mathbb{E}[x_0|x_t], \sigma^2 I + r_t^2 A A^T)
 $$
 
 **Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[x_0|x_t, y]$ with the solution to the following proximal problem:
+
 $$
 \mathbb{E}[x_0|x_t,y] \approx \arg\min_{x_0} \lVert y - A x_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert x_0 - \mathbb{E}[x_0|x_t] \rVert^2_2
 $$
+
 which can be intepreted as compute the mean of an approximate distribution $q_t(x_0|x_t,y) \propto p(y|x_0)q_t(x_0|x_t)$  for the conditional posterior $p_t(x_0|x_t,y)\propto p(y|x_0)p_t(x_0|x_t)$.
 
 ### Solving Inverse Problems With Optimal Posterior Covariance
@@ -56,11 +61,13 @@ which can be intepreted as compute the mean of an approximate distribution $q_t(
 In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q(x_0|x_t)=\mathcal{N}(\mu(x_t), \Sigma(x_t))$, such that
 
 **Type I guidance.** The likelihood is approximated in a similar way by Gaussian marginalization:
+
 $$
 p_t(y|x_t) \approx \mathcal{N}(y|A\mu_t(x_t), \sigma^2 I + A \Sigma_t(x_t) A^T)
 $$
 
 **Type II guidance.** $\mathbb{E}[x_0|x_t,y]$ is approximated with the solution of the following auto-weighted proximal problem:
+
 $$
 \mathbb{E}[x_0|x_t,y] \approx  \arg\min_{x_0} \lVert y - A x_0 \rVert^2  + \sigma^2 \lVert x_0 - \mu_t(x_t) \rVert^2_{\Sigma_t^{-1}(x_t)}
 $$
