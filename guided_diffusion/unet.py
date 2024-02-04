@@ -229,9 +229,10 @@ class ResBlock(TimestepBlock):
         :param emb: an [N x emb_channels] Tensor of timestep embeddings.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        return checkpoint(
-            self._forward, (x, emb), self.parameters(), self.use_checkpoint
-        )
+        # return checkpoint(
+        #     self._forward, (x, emb), self.parameters(), self.use_checkpoint
+        # )
+        return self._forward(x, emb)
 
     def _forward(self, x, emb):
         if self.updown:
@@ -294,7 +295,8 @@ class AttentionBlock(nn.Module):
         self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
     def forward(self, x):
-        return checkpoint(self._forward, (x,), self.parameters(), True)
+        # return checkpoint(self._forward, (x,), self.parameters(), True)
+        return self._forward(x)
 
     def _forward(self, x):
         b, c, *spatial = x.shape

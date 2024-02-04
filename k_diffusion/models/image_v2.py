@@ -4,7 +4,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .. import layers, utils
+from .. import layers, utils, augmentation
+from scipy.fft import dctn, idctn
 
 
 def orthogonal_(module):
@@ -85,19 +86,20 @@ class MappingNet(nn.Sequential):
 
 
 class ImageDenoiserModelV2(nn.Module):
-    def __init__(self, c_in, feats_in, depths, channels, self_attn_depths, cross_attn_depths=None, mapping_cond_dim=0, unet_cond_dim=0, cross_cond_dim=0, dropout_rate=0., patch_size=1, skip_stages=0, has_variance=False):
+    def __init__(self, c_in, feats_in, depths, channels, self_attn_depths, cross_attn_depths=None, mapping_cond_dim=0, unet_cond_dim=0, cross_cond_dim=0, dropout_rate=0., patch_size=1, skip_stages=0, has_variance=False, ortho_tf_type=None):
         super().__init__()
         self.c_in = c_in
         self.channels = channels
         self.unet_cond_dim = unet_cond_dim
         self.patch_size = patch_size
         self.has_variance = has_variance
+        self.ortho_tf_type = ortho_tf_type
         self.timestep_embed = layers.FourierFeatures(1, feats_in)
         if mapping_cond_dim > 0:
             self.mapping_cond = nn.Linear(mapping_cond_dim, feats_in, bias=False)
         self.mapping = MappingNet(feats_in, feats_in)
         self.proj_in = nn.Conv2d((c_in + unet_cond_dim) * self.patch_size ** 2, channels[max(0, skip_stages - 1)], 1)
-        self.proj_out = nn.Conv2d(channels[max(0, skip_stages - 1)], c_in * self.patch_size ** 2 * (2 if self.has_variance else 1), 1)
+        self.proj_out = nn.Conv2d(channels[max(0, skip_stages - 1)], c_in * self.patch_size ** 2 * (3 if self.has_variance else 1), 1)
         nn.init.zeros_(self.proj_out.weight)
         nn.init.zeros_(self.proj_out.bias)
         if cross_cond_dim == 0:
@@ -129,11 +131,11 @@ class ImageDenoiserModelV2(nn.Module):
         input = self.u_net(input, cond)
         input = self.proj_out(input)
         if self.has_variance:
-            input, logvar = torch.chunk(input, chunks=2, dim=1)
+            input, logvar, logvar_ot = torch.chunk(input, chunks=3, dim=1)
         if self.patch_size > 1:
             input = F.pixel_shuffle(input, self.patch_size)
         if self.has_variance and return_variance:
-            return input, logvar
+            return input, logvar, logvar_ot
         return input
 
     def set_skip_stages(self, skip_stages):

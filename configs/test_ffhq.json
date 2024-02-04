@@ -19,6 +19,6 @@
     },
     "dataset": {
         "type": "imagefolder",
-        "location": "../testsets/ffhq_val"
+        "location": "../data/test/ffhq_val"
     }
 }

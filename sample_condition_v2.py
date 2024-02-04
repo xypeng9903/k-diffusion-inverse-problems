@@ -10,26 +10,16 @@ import torch
 from tqdm import trange, tqdm
 
 import k_diffusion as K
-from condition.condition import ConditionOpenAIDenoiser
+from condition.condition import ConditionImageDenoiserV2
 from condition.measurements import get_operator
 
-from guided_diffusion import dist_util
-from guided_diffusion.script_util import (
-    NUM_CLASSES,
-    model_and_diffusion_defaults,
-    create_model_and_diffusion,
-    args_to_dict,
-    add_dict_to_argparser
-)
-from condition.diffpir_utils import utils_model
 from torch.utils import data
-from torchvision import transforms
+from torchvision import datasets, transforms, utils
 
 import yaml
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
 import os
-
 from functools import partial
 
 
@@ -79,11 +69,11 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('--batch-size', type=int, default=1,
                    help='the batch size')
-    p.add_argument('--checkpoint', type=str, default="../model_zoo/diffusion_ffhq_10m.pt",
+    p.add_argument('--checkpoint', type=str, required=True,
                    help='the checkpoint to use')
-    p.add_argument('--config', type=str, default="configs/config_256x256_ffhq.json",
+    p.add_argument('--config', type=str, default="configs/test_ffhq_dct.json",
                    help='the model config')
-    p.add_argument('--operator-config', type=str, default="configs/inpainting_config.yaml")
+    p.add_argument('--operator-config', type=str, default="configs/gaussian_deblur_config.yaml")
     p.add_argument('-n', type=int, default=1,
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
@@ -91,14 +81,15 @@ def main():
     p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
     p.add_argument('--guidance', type=str, default="I")
-    p.add_argument('--xstart-cov-type', type=str, choices=["analytic", "convert", "pgdm", "dps", "diffpir", "tmpd"], default="convert")
-    p.add_argument('--lam', type=float, default=None)
-    p.add_argument('--zeta', type=float, default=None)
-    p.add_argument('--mle-sigma-thres', type=float, default=0.2)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_openai", "temp"))
+    p.add_argument('--lam', type=float, default=1)
+    p.add_argument('--zeta', type=float, default=1)
+    p.add_argument('--mle-sigma-thres', type=float, default=1)
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_v2", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
     p.add_argument('--euler', dest='euler', action='store_true')
+    p.add_argument('--spatial-var', dest='spatial_var', action='store_true')
+
 
     #-----------------------------------------
     # Setup unconditional model and test data
@@ -108,13 +99,10 @@ def main():
     
     assert args.batch_size == 1
     
+
     config = K.config.load_config(open(args.config))
     model_config = config['model']
     dataset_config = config['dataset']
-    extra_args = utils_model.create_argparser(model_config['openai']).parse_args([])
-
-    add_dict_to_argparser(p, args_to_dict(extra_args, model_and_diffusion_defaults().keys()))
-    args = p.parse_args()
 
     # TODO: allow non-square input sizes
     assert len(model_config['input_size']) == 2 and model_config['input_size'][0] == model_config['input_size'][1]
@@ -122,14 +110,12 @@ def main():
 
     accelerator = accelerate.Accelerator()
     device = accelerator.device
-    print('Using device:', device, flush=True)
+    print(f'Using device: {device}', flush=True)
 
-    inner_model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, model_and_diffusion_defaults().keys()))
-    inner_model.load_state_dict(
-        dist_util.load_state_dict(args.checkpoint, map_location="cpu")
-    )
-    inner_model = inner_model.eval().to(device)
+    inner_model = K.config.make_model(config)
+    model = K.config.make_denoiser_wrapper(config)(inner_model)
+    ckpt = torch.load(args.checkpoint, map_location='cpu')
+    accelerator.unwrap_model(model.inner_model).load_state_dict(ckpt['model_ema'])
 
     sigma_min = model_config['sigma_min']
     sigma_max = model_config['sigma_max']
@@ -151,7 +137,10 @@ def main():
     operator = get_operator(device=device, **operator_config)
 
     print(f"Operation: {operator_config['name']} / sigma_s: {operator_config['sigma_s']}")
+
+    model, test_dl, operator = accelerator.prepare(model, test_dl, operator)
     
+    @K.utils.eval_mode(model)
     def run():
         if not os.path.exists(args.logdir):
             os.makedirs(args.logdir)
@@ -159,31 +148,27 @@ def main():
 
         loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
         sigmas = K.sampling.get_sigmas_karras(args.steps, sigma_min, sigma_max, rho=7., device=device)
-        recon_mse = torch.load(model_config['recon_mse'])
         metrics_list = []
         
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
-            x0 = x0.to(device)
             measurement = operator.forward(x0.clone())
-            model = ConditionOpenAIDenoiser(
-                denoiser=inner_model,
-                diffusion=diffusion,
+            cond_model = ConditionImageDenoiserV2(
+                denoiser=model,
                 operator=operator,
                 measurement=measurement,
                 guidance=args.guidance,
-                x0_cov_type=args.xstart_cov_type,
-                recon_mse=recon_mse,
-                lambda_=args.lam,
+                device=device,
                 zeta=args.zeta,
+                lambda_=args.lam,
                 mle_sigma_thres=args.mle_sigma_thres,
-                device=device
-            ).eval()
+                ortho_tf_type=None if args.spatial_var else model_config['ortho_tf_type']
+            )
                 
             def sample_fn(n):
                 x = torch.randn([n, model_config['input_channels'], size[0], size[1]], device=device) * sigma_max
                 sampler = partial(K.sampling.sample_heun if not args.euler else K.sampling.sample_euler,
-                                  model, x, sigmas, disable=not accelerator.is_local_main_process)
+                                  cond_model, x, sigmas, disable=not accelerator.is_local_main_process)
                 if not args.ode:
                     x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
                 else:

@@ -83,7 +83,7 @@ def make_model(config):
             unet_cond_dim=config['unet_cond_dim'],
             cross_cond_dim=config['cross_cond_dim'],
             skip_stages=config['skip_stages'],
-            has_variance=config['has_variance'],
+            has_variance=config['has_variance']
         )
     if config['augment_wrapper']:
         model = augmentation.KarrasAugmentWrapper(model)
@@ -95,10 +95,11 @@ def make_denoiser_wrapper(config):
     sigma_data = config.get('sigma_data', 1.)
     has_variance = config.get('has_variance', False)
     loss_config = config.get('loss_config', 'karras')
+    ortho_tf_type = config.get('ortho_tf_type', None)
     if loss_config == 'karras':
         if not has_variance:
             return partial(layers.Denoiser, sigma_data=sigma_data)
-        return partial(layers.DenoiserWithVariance, sigma_data=sigma_data)
+        return partial(layers.DenoiserWithVariance, sigma_data=sigma_data, ortho_tf_type=ortho_tf_type)
     if loss_config == 'simple':
         if has_variance:
             raise ValueError('Simple loss config does not support a variance output')

@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from . import sampling, utils
+from . import sampling, utils, augmentation
 
 # Karras et al. preconditioned denoiser
 
@@ -36,25 +36,38 @@ class Denoiser(nn.Module):
 
 
 class DenoiserWithVariance(Denoiser):
+    def __init__(self, inner_model, sigma_data=1, ortho_tf_type=None):
+        super().__init__(inner_model, sigma_data)
+        self.ortho_tf_type = ortho_tf_type
+        self.ortho_tf = augmentation.OrthoTransform(ortho_tf_type)
+
     def loss(self, input, noise, sigma, **kwargs):
         c_skip, c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
         noised_input = input + noise * utils.append_dims(sigma, input.ndim)
-        model_output, logvar = self.inner_model(noised_input * c_in, sigma, return_variance=True, **kwargs)
+        model_output, logvar, logvar_ot = self.inner_model(noised_input * c_in, sigma, return_variance=True, **kwargs)
         if logvar.shape != model_output.shape:
             logvar = utils.append_dims(logvar, model_output.ndim)
+        
+        ot = self.ortho_tf
         target = (input - c_skip * noised_input) / c_out
-        losses = ((model_output - target) ** 2 / logvar.exp() + logvar) / 2
+
+        error = (model_output - target).pow(2)
+        error_ot = (ot(model_output) - ot(target)).pow(2).detach()
+
+        loss = error / logvar.exp() + logvar
+        loss_ot = error_ot / logvar_ot.exp() + logvar_ot
+        
+        losses = loss + loss_ot
+        
         return losses.flatten(1).mean(1)
 
     def forward(self, input, sigma, **kwargs):
         return_variance = kwargs.get('return_variance', False)
         c_skip, c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
         model_out = self.inner_model(input * c_in, sigma, **kwargs)
-        
+
         if return_variance:
-            x0_mean = model_out[0] * c_out + input * c_skip
-            x0_var = model_out[1].exp() * c_out**2
-            return x0_mean, x0_var
+            return model_out
         else:
             x0_mean = model_out * c_out + input * c_skip
             return x0_mean

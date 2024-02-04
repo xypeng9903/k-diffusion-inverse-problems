@@ -7,6 +7,8 @@ from skimage import transform
 import torch
 from torch import nn
 
+from scipy.fft import dctn, idctn
+
 
 def translate2d(tx, ty):
     mat = [[1, 0, tx],
@@ -103,3 +105,36 @@ class KarrasAugmentWrapper(nn.Module):
 
     def set_patch_size(self, patch_size):
         return self.inner_model.set_patch_size(patch_size)
+    
+
+class OrthoTransform:
+    def __init__(self, ortho_tf_type=None):
+        self.ortho_tf_type = ortho_tf_type
+
+    def __call__(self, x: torch.Tensor):
+        if self.ortho_tf_type is None:
+            return x
+        
+        elif self.ortho_tf_type == 'dct':
+            device = x.device
+            x = x.detach().cpu().numpy()
+            x = dctn(x, norm='ortho')
+            x = torch.Tensor(x).to(device)
+            return x
+        
+        else:
+            raise ValueError('Invalid transform type')
+        
+    def inv(self, x: torch.Tensor):
+        if self.ortho_tf_type is None:
+            return x
+        
+        elif self.ortho_tf_type == 'dct':
+            device = x.device
+            x = x.detach().cpu().numpy()
+            x = idctn(x, norm='ortho')
+            x = torch.Tensor(x).to(device)
+            return x
+        
+        else:
+            raise ValueError('Invalid transform type')

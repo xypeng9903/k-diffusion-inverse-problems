@@ -18,6 +18,6 @@
     },
     "dataset": {
         "type": "imagefolder",
-        "location": "../testsets/imagenet_val"
+        "location": "../data/test/imagenet_val"
     }
 }

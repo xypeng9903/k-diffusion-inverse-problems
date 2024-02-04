@@ -85,7 +85,7 @@ class ColorizationOperator(LinearOperator):
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
         
     def forward(self, data, **kwargs):
-        y = data.mean(dim=[1])
+        y = data.mean(dim=1, keepdim=True)
         if not kwargs.get('noiseless', False):
             y += self.sigma_s * torch.randn_like(y)
         return y
