@@ -20,6 +20,7 @@ ___________
   - [Setup Conda Environment](#setup-conda-environment)
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
+  - [Additional Results With DCT Variance](#additional-results-with-dct-variance)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 
@@ -114,6 +115,19 @@ bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
 bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
 ```
 
+## Additional Results With DCT Variance
+We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint "ffhq_dct.pth" and paste it to "../model_zoo".
+
+For reproducing results on FFHQ dataset in Table 5, run
+```bash
+bash quick_start/dct_var/eval_guidance_II.sh 0
+bash quick_start/dct_var/eval_guidance_II.sh 1
+bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
+
+bash quick_start/dct_var/eval_guidance_I.sh 0
+bash quick_start/dct_var/eval_guidance_I.sh 1
+bash quick_start/dct_var/eval_guidance_I_spatial_var.sh 0.2
+```
 
 
 ## Citation
