@@ -36,7 +36,7 @@ covariances. Experimental results demonstrate that the proposed methods signific
 ### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
 We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi\text{GDM}$](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
+**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi GDM$](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
 
 $$
 \mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
