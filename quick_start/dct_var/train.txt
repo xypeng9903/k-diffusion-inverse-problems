@@ -1,6 +1,6 @@
 setsid nohup accelerate launch train.py \
 --config configs/train_ffhq_dct.json \
---batch-size 8 \
+--batch-size 4 \
 --sample-n 1 \
 --name ffhq_dct > output.log 2>&1
 
