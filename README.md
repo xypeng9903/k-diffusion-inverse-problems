@@ -134,7 +134,14 @@ bash quick_start/dct_var/eval_guidance_I_spatial_var.sh 0.2
 If you find this repo helpful, please cite:
 
 ```bibtex
-@inproceedings{}
+@misc{peng2024improving,
+      title={Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance}, 
+      author={Xinyu Peng and Ziyang Zheng and Wenrui Dai and Nuoqian Xiao and Chenglin Li and Junni Zou and Hongkai Xiong},
+      year={2024},
+      eprint={2402.02149},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
 ```
 
 
