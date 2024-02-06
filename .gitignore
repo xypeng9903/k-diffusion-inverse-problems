@@ -2,3 +2,4 @@
 runs/*
 model_zoo/*
 ffhq_dct*
+output.log
