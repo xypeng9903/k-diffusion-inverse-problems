@@ -10,6 +10,7 @@ else
     echo "Invalid dataset."
 fi
 
+
 for COV in dps pgdm analytic convert
 do
     python sample_condition_openai.py \
@@ -20,8 +21,7 @@ do
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/gaussian_deblur_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/${COV} \
-    --mle-sigma-thres 80
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/${COV} 
 
     python sample_condition_openai.py \
     --guidance I \
@@ -31,8 +31,7 @@ do
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/motion_deblur_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/${COV} \
-    --mle-sigma-thres 80
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/${COV} 
 
     python sample_condition_openai.py \
     --guidance I \
@@ -42,8 +41,7 @@ do
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/inpainting_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/${COV} \
-    --mle-sigma-thres 80
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/${COV}
 
     python sample_condition_openai.py \
     --guidance I \
@@ -53,6 +51,5 @@ do
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/super_resolution_4x_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/${COV} \
-    --mle-sigma-thres 80
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/${COV}
 done
