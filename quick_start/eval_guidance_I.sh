@@ -10,7 +10,7 @@ else
     echo "Invalid dataset."
 fi
 
-for COV in analytic
+for COV in dps pgdm analytic convert
 do
     python sample_condition_openai.py \
     --guidance I \
