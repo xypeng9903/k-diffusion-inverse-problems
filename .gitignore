@@ -3,5 +3,4 @@ runs/*
 model_zoo/*
 ffhq_dct*
 output.log
-viz.ipynb
 nohup.out
