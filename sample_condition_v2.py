@@ -81,8 +81,8 @@ def main():
     p.add_argument('--steps', type=int, default=50,
                    help='the number of denoising steps')
     p.add_argument('--guidance', type=str, default="I")
-    p.add_argument('--lam', type=float, default=1)
-    p.add_argument('--zeta', type=float, default=1)
+    p.add_argument('--lam', type=float, default=None)
+    p.add_argument('--zeta', type=float, default=None)
     p.add_argument('--mle-sigma-thres', type=float, default=1)
     p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_v2", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
