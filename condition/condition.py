@@ -217,9 +217,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             if sigma < self.mle_sigma_thres:
                 x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)      
             else:
-                if self.guidance == "I":
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-                elif self.guidance == "II":
+                if self.lambda_ is not None:
                     x0_var = sigma.pow(2) / self.lambda_ 
                 else:
                     x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
