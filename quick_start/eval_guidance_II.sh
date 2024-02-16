@@ -11,7 +11,7 @@ else
 fi
 
 
-for COV in diffpir
+for COV in diffpir analytic convert
 do
     for LAM in 1e-2 1e-1 1e0 1e1 1e2
     do

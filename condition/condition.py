@@ -386,7 +386,9 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation
                 u = u.real.flatten().detach().cpu().numpy()
                 return u
         
-        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real.flatten().detach().cpu().numpy()
+        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real
+        b = b.flatten().detach().cpu().numpy()
+
         u, info = cg(A(), b, tol=1e-4, maxiter=1000)
         if info != 0:
             warn('CG not converge.')

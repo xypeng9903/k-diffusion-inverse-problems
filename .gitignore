@@ -4,3 +4,4 @@ model_zoo/*
 ffhq_dct*
 output.log
 nohup.out
+linear_vae.py
