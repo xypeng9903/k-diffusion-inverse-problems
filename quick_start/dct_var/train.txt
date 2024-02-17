@@ -1,12 +1,13 @@
 setsid nohup accelerate launch train.py \
 --config configs/train_ffhq_dct.json \
 --batch-size 4 \
---sample-n 1 \
 --grad-accum-steps 8 \
+--sample-n 1 \
 --name ffhq_dct > output.log 2>&1 \
 
 python train.py \
 --config configs/train_ffhq_dct.json \
---batch-size 8 \
+--batch-size 4 \
+--grad-accum-steps 16 \
 --sample-n 1 \
---name runs/ffhq_dct \
+--name runs/train/ffhq_dct \

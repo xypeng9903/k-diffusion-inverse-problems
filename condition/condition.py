@@ -304,7 +304,7 @@ def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.Ortho
 
             def _matvec(self, mat):
                 mat = torch.Tensor(mat).reshape(x0_mean.shape).to(x0_mean.device)
-                mat = mask * iot((sigma_s**2 + theta0_var) * ot(mask * mat)) + (1 - mask) * mat
+                mat = sigma_s**2 * mat + mask * iot(theta0_var * ot(mat))
                 mat = mat.flatten().detach().cpu().numpy()
                 return mat
         
