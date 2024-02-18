@@ -166,7 +166,7 @@ def main():
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
             x0 = x0.to(device)
-            measurement = operator.forward(x0.clone())
+            measurement = operator.forward(x0.clone(), flatten=True)
             model = ConditionOpenAIDenoiser(
                 denoiser=inner_model,
                 diffusion=diffusion,
@@ -200,7 +200,7 @@ def main():
             # qualitative results
             if args.save_img:
                 measurement_filename = os.path.join(args.logdir, f"{args.prefix}_img_{i}_measurement.png")
-                K.utils.to_pil_image(measurement).save(measurement_filename)
+                K.utils.to_pil_image(measurement[0]).save(measurement_filename)
                 for j, out in enumerate(hat_x0):
                     hat_x0_filename = os.path.join(args.logdir, f"{args.prefix}_img_{i}_hat_x0_sample_{j}.png")
                     K.utils.to_pil_image(out).save(hat_x0_filename)

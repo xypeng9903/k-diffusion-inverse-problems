@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from . import sampling, utils, augmentation
+from condition.utils import OrthoTransform
 
 # Karras et al. preconditioned denoiser
 
@@ -39,7 +40,7 @@ class DenoiserWithVariance(Denoiser):
     def __init__(self, inner_model, sigma_data=1, ortho_tf_type=None):
         super().__init__(inner_model, sigma_data)
         self.ortho_tf_type = ortho_tf_type
-        self.ortho_tf = augmentation.OrthoTransform(ortho_tf_type)
+        self.ortho_tf = OrthoTransform(ortho_tf_type)
 
     def loss(self, input, noise, sigma, **kwargs):
         c_skip, c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
@@ -52,7 +53,7 @@ class DenoiserWithVariance(Denoiser):
         target = (input - c_skip * noised_input) / c_out
 
         error = (model_output - target).pow(2)
-        error_ot = (ot(model_output) - ot(target)).pow(2).detach()
+        error_ot = (ot(model_output) - ot(target)).pow(2)
 
         loss = error / logvar.exp() + logvar
         loss_ot = error_ot / logvar_ot.exp() + logvar_ot

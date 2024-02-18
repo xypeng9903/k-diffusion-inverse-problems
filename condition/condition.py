@@ -4,12 +4,38 @@ import torch
 from k_diffusion.external import OpenAIDenoiser
 from k_diffusion.models import ImageDenoiserModelV2
 from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
-from k_diffusion import utils, augmentation
+from k_diffusion import utils
 from torch.fft import fft2, ifft2
 import condition.diffpir_utils.utils_sisr as sr
 from scipy.sparse.linalg import cg, LinearOperator
 import numpy as np
 from warnings import warn
+from abc import abstractmethod
+from functools import partial
+import gpytorch
+from gpytorch.distributions import MultivariateNormal
+from .utils import OrthoTransform, LazyOTCovariance
+
+
+class LazyLikelihoodCovariance(gpytorch.LinearOperator):
+
+    def _matmul(self: gpytorch.LinearOperator, rhs: torch.Tensor) -> torch.Tensor:
+        x0_cov, operator = self._kwargs['x0_cov'], self._kwargs['operator']
+        sigma_s = operator.sigma_s
+        A = partial(operator.forward, noiseless=True, flatten=True)
+        AT = partial(operator.transpose, flatten=True)
+        
+        rhs = rhs.permute(1, 0)
+        rhs = sigma_s**2 * rhs + A(x0_cov(AT(rhs)))[1]
+        rhs = rhs.permute(1, 0)
+
+        return rhs
+    
+    def _size(self) -> torch.Size:
+        return torch.Size([self._args[0].numel(), self._args[0].numel()])
+    
+    def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+        return self
 
 
 class ConditionDenoiser(nn.Module):
@@ -28,23 +54,39 @@ class ConditionDenoiser(nn.Module):
     ):
         super().__init__()
         self.operator = operator
-        self.y = measurement
+        self.y, self.y_flatten = measurement
         self.guidance = guidance
         self.zeta = zeta
         self.lambda_ = lambda_
         self.device = device
         self.mle_sigma_thres = mle_sigma_thres
         self.ortho_tf_type = ortho_tf_type
-        self.ortho_tf = augmentation.OrthoTransform(ortho_tf_type)
+        self.ortho_tf = OrthoTransform(ortho_tf_type)
     
         self.mat_solver = __MAT_SOLVER__[operator.name]
         self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
+
+    @abstractmethod
+    def uncond_pred(self, x, sigma):
+        raise NotImplementedError
+
+    def loglikelihood(self, x0_mean, theta0_var):
+        x0_cov = LazyOTCovariance(self.ortho_tf, theta0_var)        
+        mean = self.operator.forward(x0_mean, noiseless=True, flatten=True)[1][0]
+        cov = LazyLikelihoodCovariance(self.y_flatten, x0_cov=x0_cov, operator=self.operator)
+        return MultivariateNormal(mean, cov).log_prob(self.y_flatten[0])
 
     def forward(self, x, sigma):
         assert x.shape[0] == 1
 
         if self.guidance == "uncond":
             hat_x0 = self.uncond_pred(x, sigma)[0]
+
+        elif self.guidance == "autoI":
+            if sigma < self.mle_sigma_thres:
+                hat_x0 = self._auto_type_I_guidance_impl(x, sigma)
+            else:
+                hat_x0 = self._type_I_guidance_impl(x, sigma)
 
         elif self.guidance == "I":
             hat_x0 = self._type_I_guidance_impl(x, sigma)
@@ -83,6 +125,13 @@ class ConditionDenoiser(nn.Module):
             raise ValueError(f"Invalid guidance type: '{self.guidance}'.")
             
         return hat_x0.clip(-1, 1).detach()
+    
+    def _auto_type_I_guidance_impl(self, x, sigma):
+        x = x.requires_grad_()
+        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        likelihood_score = grad(self.loglikelihood(x0_mean, x0_var if self.ortho_tf_type is None else theta0_var), x)[0]
+        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
+        return hat_x0
 
     def _dps_guidance_impl(self, x, sigma):
         assert self.zeta is not None
@@ -123,9 +172,6 @@ class ConditionDenoiser(nn.Module):
                                       x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
         return hat_x0
         
-    def uncond_pred(self, x, sigma):
-        raise NotImplementedError
-
 
 class ConditionOpenAIDenoiser(ConditionDenoiser):
     
@@ -157,12 +203,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
 
         self.denoiser = denoiser
         self.diffusion = diffusion
-        self.guidance = guidance
         self.x0_cov_type = x0_cov_type
-        self.lambda_ = lambda_
-        self.mle_sigma_thres = mle_sigma_thres
-        self.device = device
-
         self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=device)
 
         self.recon_mse = recon_mse
@@ -171,7 +212,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 self.recon_mse[key] = self.recon_mse[key].to(device)
 
     def uncond_pred(self, x, sigma):
-        c_out, c_in = [utils.append_dims(x, x.ndim) for x in self.openai_denoiser.get_scalings(sigma)]
+        c_out, c_in = self.openai_denoiser.get_scalings(sigma)
         t = self.openai_denoiser.sigma_to_t(sigma).long()
         D = self.diffusion
 
@@ -289,7 +330,7 @@ def register_mat_solver(name):
 
 @register_mat_solver('inpainting')
 @torch.no_grad()
-def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     mask = operator.mask
     sigma_s = operator.sigma_s.clip(min=0.001)
     if theta0_var.numel() == 1:
@@ -318,7 +359,7 @@ def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.Ortho
 
 
 @torch.no_grad()
-def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     sigma_s = operator.sigma_s.clip(min=0.001)
     FB, FBC, F2B, FBFy = operator.pre_calculated
 
@@ -352,19 +393,19 @@ def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTra
 
 @register_mat_solver('gaussian_blur')
 @torch.no_grad()
-def gaussian_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def gaussian_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_mat_solver('motion_blur')
 @torch.no_grad()
-def motion_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def motion_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_mat_solver('super_resolution')
 @torch.no_grad()
-def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     sigma_s = operator.sigma_s.clip(min=0.001).clip(min=1e-2)
     sf = operator.scale_factor
     FB, FBC, F2B, FBFy = operator.pre_calculated
@@ -413,7 +454,7 @@ def register_proximal_solver(name):
 
 
 @register_proximal_solver('colorization')
-def colorization_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()): # TODO
+def colorization_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()): # TODO
     sigma_s = operator.sigma_s.clip(min=0.001)
 
     if theta0_var.numel() == 1:
@@ -446,7 +487,7 @@ def colorization_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentatio
 
 
 @register_proximal_solver('inpainting')
-def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     mask = operator.mask
     sigma_s = operator.sigma_s.clip(min=0.001)
 
@@ -477,7 +518,7 @@ def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.
     return cond_x0_mean
 
 
-def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     sigma_s = operator.sigma_s.clip(min=0.001)
     FB, FBC, F2B, FBFy = operator.pre_calculated
 
@@ -511,17 +552,17 @@ def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.Ort
 
 
 @register_proximal_solver('gaussian_blur')
-def gaussian_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def gaussian_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_proximal_solver('motion_blur')
-def motion_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def motion_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_proximal_solver('super_resolution')
-def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=augmentation.OrthoTransform()):
+def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     sigma_s = operator.sigma_s.clip(min=0.001)
     sf = operator.scale_factor
     FB, FBC, F2B, FBFy = operator.pre_calculated

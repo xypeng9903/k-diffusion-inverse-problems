@@ -11,7 +11,7 @@ else
 fi
 
 
-for COV in dps pgdm analytic convert
+for COV in pgdm
 do
     python sample_condition_openai.py \
     --guidance I \

@@ -40,24 +40,16 @@ def get_operator(name: str, **kwargs):
 
 
 class LinearOperator(ABC):
+
     @abstractmethod
-    def forward(self, data, **kwargs):
-        # calculate A * X
-        pass
+    def forward(self, data, flatten=False, noiseless=False):
+        raise NotImplementedError("The class {} requires a forward function!".format(self.__class__.__name__))
 
-    def transpose(self, y):
-        ones = torch.ones(1, 3, 256, 256).to(y.device)
-        return torch.autograd.functional.vjp(
-            partial(self.forward, noisess=True), ones, y
-        )[1]
-    
-    def ortho_project(self, data, **kwargs):
-        # calculate (I - A^T * A)X
-        return data - self.transpose(self.forward(data, **kwargs), **kwargs)
-
-    def project(self, data, measurement, **kwargs):
-        # calculate (I - A^T * A)Y - AX
-        return self.ortho_project(measurement, **kwargs) - self.forward(data, **kwargs)
+    def auto_transpose(self, y, flatten=False):
+        input = torch.randn(y.shape[0], *self.in_shape[-3:]).to(self.device).requires_grad_()
+        res = torch.autograd.grad((y * self.forward(input, flatten=flatten, noiseless=True)).sum(), 
+                                  input, retain_graph=True)[0]
+        return res
 
 
 @register_operator(name='noise')
@@ -91,7 +83,7 @@ class ColorizationOperator(LinearOperator):
         return y
 
 
-@register_operator(name='super_resolution')
+@register_operator(name='super_resolution')     
 class SuperResolutionOperator(LinearOperator):
     def __init__(self, in_shape, scale_factor, sigma_s, device):
         self.device = device
@@ -104,16 +96,27 @@ class SuperResolutionOperator(LinearOperator):
         k_index = scale_factor - 2 if scale_factor < 5 else 2
         self.kernel = torch.Tensor(kernels[0, k_index].astype(np.float64))
 
-    def forward(self, data, **kwargs):
+        self.in_shape = in_shape
+        out_shape = tuple(int(s / scale_factor) for s in in_shape[-3:])
+        self.out_shape = (1, *out_shape)
+
+    def forward(self, data, flatten=False, noiseless=False):
         y = self.down_sample(data) 
-        if not kwargs.get('noiseless', False):
+        if not noiseless:
             y += self.sigma_s * torch.randn_like(y)
         k = self.get_kernel().to(self.device)
         self.pre_calculated = pre_calculate(y, k, self.scale_factor)
+        if flatten:
+            return y.reshape(y.shape[0], -1)
         return y
-
-    def project(self, data, measurement, **kwargs):
-        return data - self.transpose(self.forward(data)) + self.transpose(measurement)
+    
+    def transpose(self, y, flatten=False):
+        if flatten:
+            y = y.reshape(y.shape[0], *self.out_shape[-3])
+        k = self.get_kernel().to(self.device)
+        FB, FBC, F2B, FBFy = pre_calculate(y, k, self.scale_factor)
+        x = ifft2(FBFy).real
+        return x
     
     def get_kernel(self):
         return self.kernel.view(1, 1, *self.kernel.shape)
@@ -121,7 +124,7 @@ class SuperResolutionOperator(LinearOperator):
 
 @register_operator(name='motion_blur')
 class MotionBlurOperator(LinearOperator):
-    def __init__(self, kernel_size, intensity, sigma_s, device):
+    def __init__(self, in_shape, kernel_size, intensity, sigma_s, device):
         self.device = device
         self.kernel_size = kernel_size
         self.conv = Blurkernel(blur_type='motion',
@@ -131,16 +134,27 @@ class MotionBlurOperator(LinearOperator):
         self.kernel = np.load('./condition/kernels/motion_ks61_std0.5.npy')
         self.conv.update_weights(self.kernel)
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
+        self.in_shape = in_shape
 
-    def forward(self, data, **kwargs):
+    def forward(self, data, flatten=False, noiseless=False): # TODO
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, _ = pre_calculate(data, k, 1)
         y = ifft2(FB * fft2(data)).real
-        if not kwargs.get('noiseless', False):
+        if not noiseless:
             y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
+        if flatten:
+            return y, y.reshape(y.shape[0], -1)
         return y
 
+    def transpose(self, y, flatten=False): 
+        if flatten:
+            y = y.reshape(y.shape[0], *self.in_shape[-3:])
+        k = self.get_kernel().to(self.device)
+        FB, FBC, F2B, _ = pre_calculate(y, k, 1)
+        x = ifft2(FBC * fft2(y)).real
+        return x
+    
     def get_kernel(self):
         kernel = torch.Tensor(self.kernel).to(self.device)
         return kernel.view(1, 1, self.kernel_size, self.kernel_size)
@@ -148,7 +162,7 @@ class MotionBlurOperator(LinearOperator):
 
 @register_operator(name='gaussian_blur')
 class GaussialBlurOperator(LinearOperator):
-    def __init__(self, kernel_size, intensity, sigma_s, device):
+    def __init__(self, in_shape, kernel_size, intensity, sigma_s, device):
         self.device = device
         self.kernel_size = kernel_size
         self.conv = Blurkernel(blur_type='gaussian',
@@ -159,15 +173,27 @@ class GaussialBlurOperator(LinearOperator):
         self.kernel = torch.Tensor(np.load('./condition/kernels/gaussian_ks61_std3.0.npy')).to(device)
         self.conv.update_weights(self.kernel.type(torch.float32))
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
+        self.in_shape = in_shape
 
-    def forward(self, data, **kwargs):
+    def forward(self, data, flatten=False, noiseless=False):
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, _ = pre_calculate(data, k, 1)
         y = ifft2(FB * fft2(data)).real
-        if not kwargs.get('noiseless', False):
+        if noiseless:
             y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
+        
+        if flatten:
+            return y, y.reshape(y.shape[0], -1)
         return y
+    
+    def transpose(self, y, flatten=False):
+        if flatten:
+            y = y.reshape(y.shape[0], *self.in_shape[-3:])
+        k = self.get_kernel().to(self.device)
+        FB, FBC, F2B, _ = pre_calculate(y, k, 1)
+        x = ifft2(FBC * fft2(y)).real
+        return x
     
     def get_kernel(self):
         return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
@@ -182,25 +208,38 @@ class InpaintingOperator(LinearOperator):
         self.in_shape = (1, 3, mask_opt['image_size'], mask_opt['image_size'])
         self.mask = self.generate_mask(mask_opt)
     
-    def forward(self, data: torch.Tensor, **kwargs):        
-        '''
+    def forward(self, data: torch.Tensor, flatten=False, noiseless=False):        
+        y = data.clone()
+        if not noiseless:
+            y += self.sigma_s * torch.randn_like(y)
+        y = y * self.mask
+
+        if flatten:
+            sample_indices = torch.where(self.mask > 0)
+            return y, y[..., sample_indices[-3], sample_indices[-2], sample_indices[-1]]
+
+        else:
+            '''
             Compute D^T (Dx + n) to address vary-dimensionality, 
             which is equivalent to m \odot (x + n)
-        '''
+            ''' 
+            return y
+    
+    def transpose(self, data, flatten=False):
         y = data.clone()
-        if not kwargs.get('noiseless', False):
-            y += self.sigma_s * torch.randn_like(y)
-        return y * self.mask
-    
-    def transpose(self, data, **kwargs):
-        return data
-    
-    def ortho_project(self, data, **kwargs):
-        return data - self.forward(data, **kwargs)
-    
+
+        if flatten:
+            sample_indices = torch.where(self.mask > 0)
+            x = torch.zeros(y.shape[0], *self.in_shape[-3:]).to(self.device)
+            x[..., sample_indices[-3], sample_indices[-2], sample_indices[-1]] = y
+        else:
+            x = y
+        
+        return x
+        
     def generate_mask(self, mask_opt):
         mask_generator = MaskGenerator(**mask_opt)
-        img = torch.randn(self.in_shape).to(self.device)
+        img = torch.randn(*self.in_shape).to(self.device)
         mask = mask_generator(img)
         return mask
     
