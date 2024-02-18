@@ -70,8 +70,8 @@ class ConditionDenoiser(nn.Module):
     def uncond_pred(self, x, sigma):
         raise NotImplementedError
 
-    def loglikelihood(self, x0_mean, theta0_var):
-        x0_cov = LazyOTCovariance(self.ortho_tf, theta0_var)        
+    def loglikelihood(self, x0_mean, x0_var, theta0_var):
+        x0_cov = LazyOTCovariance(self.ortho_tf, x0_var if self.ortho_tf_type is None else theta0_var)        
         mean = self.operator.forward(x0_mean, noiseless=True, flatten=True)[1][0]
         cov = LazyLikelihoodCovariance(self.y_flatten, x0_cov=x0_cov, operator=self.operator)
         return MultivariateNormal(mean, cov).log_prob(self.y_flatten[0])
@@ -129,7 +129,7 @@ class ConditionDenoiser(nn.Module):
     def _auto_type_I_guidance_impl(self, x, sigma):
         x = x.requires_grad_()
         x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        likelihood_score = grad(self.loglikelihood(x0_mean, x0_var if self.ortho_tf_type is None else theta0_var), x)[0]
+        likelihood_score = grad(self.loglikelihood(x0_mean, x0_var, theta0_var), x)[0]
         hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
         return hat_x0
 
