@@ -107,7 +107,7 @@ class SuperResolutionOperator(LinearOperator):
         k = self.get_kernel().to(self.device)
         self.pre_calculated = pre_calculate(y, k, self.scale_factor)
         if flatten:
-            return y.reshape(y.shape[0], -1)
+            return y, y.reshape(y.shape[0], -1)
         return y
     
     def transpose(self, y, flatten=False):
