@@ -4,11 +4,13 @@ This repository contains the code and data associated with the paper "Improving 
 
 This code is based on the 
 
-- [K diffusion](https://github.com/crowsonkb/k-diffusion) (provide the code structure)
+- [K diffusion](https://github.com/crowsonkb/k-diffusion): Provide the code structure.
 
-- [DPS](https://github.com/DPS2022/diffusion-posterior-sampling) (provide the code for degradation opterators)
+- [DPS](https://github.com/DPS2022/diffusion-posterior-sampling): Provide the code for degradation opterators.
 
-- [DiffPIR](https://github.com/yuanzhi-zhu/DiffPIR) (provide tools for implementing closed-form solutions)
+- [DiffPIR](https://github.com/yuanzhi-zhu/DiffPIR): Provide tools for implementing closed-form solutions.
+
+- [GPyTorch](https://github.com/cornellius-gp/gpytorch): Provide tools for implementing differentiable Gaussian likelihoods, enabling auto-computed Type I guidance (Use `--guidance autoI`).
 
 ___________
 **Contents**
