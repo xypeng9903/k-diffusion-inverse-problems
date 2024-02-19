@@ -11,7 +11,7 @@ else
 fi
 
 
-for COV in analytic
+for COV in convert
 do
     python sample_condition_openai.py \
     --guidance autoI \

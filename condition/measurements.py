@@ -97,8 +97,8 @@ class SuperResolutionOperator(LinearOperator):
         self.kernel = torch.Tensor(kernels[0, k_index].astype(np.float64))
 
         self.in_shape = in_shape
-        out_shape = tuple(int(s / scale_factor) for s in in_shape[-3:])
-        self.out_shape = (1, *out_shape)
+        out_shape = tuple(int(s / scale_factor) for s in in_shape[-2:])
+        self.out_shape = (1, 3, *out_shape)
 
     def forward(self, data, flatten=False, noiseless=False):
         y = self.down_sample(data) 
@@ -112,7 +112,7 @@ class SuperResolutionOperator(LinearOperator):
     
     def transpose(self, y, flatten=False):
         if flatten:
-            y = y.reshape(y.shape[0], *self.out_shape[-3])
+            y = y.reshape(y.shape[0], *self.out_shape[-3:])
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, FBFy = pre_calculate(y, k, self.scale_factor)
         x = ifft2(FBFy).real
