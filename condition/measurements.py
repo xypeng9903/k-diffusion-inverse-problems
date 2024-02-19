@@ -179,7 +179,7 @@ class GaussialBlurOperator(LinearOperator):
         k = self.get_kernel().to(self.device)
         FB, FBC, F2B, _ = pre_calculate(data, k, 1)
         y = ifft2(FB * fft2(data)).real
-        if noiseless:
+        if not noiseless:
             y += self.sigma_s * torch.randn_like(y)
         self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
         
