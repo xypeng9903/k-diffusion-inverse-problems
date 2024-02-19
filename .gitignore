@@ -5,3 +5,4 @@ ffhq_dct*
 output.log
 nohup.out
 linear_vae.py
+quick_start/dct_var/copy_checkpoint.sh

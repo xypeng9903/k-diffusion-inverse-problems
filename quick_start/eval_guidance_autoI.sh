@@ -11,45 +11,45 @@ else
 fi
 
 
-for COV in dps pgdm analytic convert
+for COV in convert
 do
     python sample_condition_openai.py \
-    --guidance I \
+    --guidance autoI \
     --xstart-cov-type ${COV} \
     --ode \
     --save-img \
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/gaussian_deblur_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/${COV} 
+    --logdir runs/sample_condition_openai/guidance_autoI/${DATASET}/gaussian_deblur/${COV} 
 
     python sample_condition_openai.py \
-    --guidance I \
+    --guidance autoI \
     --xstart-cov-type ${COV} \
     --ode \
     --save-img \
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/motion_deblur_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/${COV} 
+    --logdir runs/sample_condition_openai/guidance_autoI/${DATASET}/motion_deblur/${COV} 
 
     python sample_condition_openai.py \
-    --guidance I \
+    --guidance autoI \
     --xstart-cov-type ${COV} \
     --ode \
     --save-img \
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/inpainting_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/${COV}
+    --logdir runs/sample_condition_openai/guidance_autoI/${DATASET}/inpaint/${COV}
 
     python sample_condition_openai.py \
-    --guidance I \
+    --guidance autoI \
     --xstart-cov-type ${COV} \
     --ode \
     --save-img \
     --config ${CONFIG} \
     --checkpoint ${CHECKPOINT} \
     --operator-config configs/super_resolution_4x_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/${COV}
+    --logdir runs/sample_condition_openai/guidance_autoI/${DATASET}/super_resolution/${COV}
 done
