@@ -123,7 +123,6 @@ class PatchwiseDCT(AbstractLinearFunction):
         self.unpatch = Rearrange("b h w c p1 p2 -> b c (h p1) (w p2)", p1=p1, p2=p2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[-1] % 8 == 0 and x.shape[-2] % 8 == 0
         device = x.device
         x = self.patch(x)
         x = x.detach().cpu().numpy()

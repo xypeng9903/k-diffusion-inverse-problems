@@ -487,6 +487,7 @@ def colorization_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransf
 
 
 @register_proximal_solver('inpainting')
+@torch.no_grad()
 def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     mask = operator.mask
     sigma_s = operator.sigma_s.clip(min=0.001)
@@ -552,16 +553,19 @@ def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()
 
 
 @register_proximal_solver('gaussian_blur')
+@torch.no_grad()
 def gaussian_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_proximal_solver('motion_blur')
+@torch.no_grad()
 def motion_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
 
 
 @register_proximal_solver('super_resolution')
+@torch.no_grad()
 def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     sigma_s = operator.sigma_s.clip(min=0.001)
     sf = operator.scale_factor

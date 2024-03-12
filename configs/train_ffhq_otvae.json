@@ -1,0 +1,22 @@
+{
+    "model": {
+        "kernel_size": 8,
+        "input_size": 256,
+        "augment_prob": 0.12
+    },
+    "dataset": {
+        "type": "imagefolder",
+        "location": "../data/train/ffhq256"
+    },
+    "optimizer": {
+        "type": "adamw",
+        "lr": 1e-3,
+        "betas": [0.95, 0.999],
+        "eps": 1e-6,
+        "weight_decay": 0
+    },
+    "loss": {
+        "kl_weight": 5.0,
+        "ortho_weight": 1.0
+    }
+}
