@@ -20,4 +20,4 @@ accelerate launch train.py \
 --batch-size 8 \
 --grad-accum-steps 4 \
 --sample-n 1 \
---name runs/train/ffhq_dct_large
+--name runs/train/ffhq_wt_large
