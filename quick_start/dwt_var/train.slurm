@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=wt_large
+#SBATCH --job-name=dwt_large
 #SBATCH --partition=dgx2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -16,8 +16,8 @@ module load gcc cuda
 ./cudaTensorCoreGemm
 
 accelerate launch train.py \
---config configs/train_ffhq_wt_large.json \
+--config configs/train_ffhq_dwt_large.json \
 --batch-size 8 \
 --grad-accum-steps 4 \
 --sample-n 1 \
---name runs/train/ffhq_wt_large
+--name runs/train/ffhq_dwt_large

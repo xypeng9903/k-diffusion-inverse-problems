@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import abstractmethod
 import torch
 from scipy.fft import dctn, idctn
-from einops.layers.torch import Rearrange
 import pywt
 import copy
 import numpy as np
@@ -108,7 +107,7 @@ class OrthoLinearFunction(AbstractLinearFunction):
 
 
 @register_ot('dct')
-class DCT(OrthoLinearFunction):
+class DiscreteCosineTransform(OrthoLinearFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         device = x.device
@@ -125,21 +124,19 @@ class DCT(OrthoLinearFunction):
         return x
     
 
-@register_ot('wt')
-class WT(OrthoLinearFunction):
+@register_ot('dwt')
+class DiscreteWaveletTransform(OrthoLinearFunction):
 
-    def __init__(self, in_shape=256, level=5) -> None:
+    def __init__(self, level=3, wavelet='haar') -> None:
         super().__init__()
-        x0 = torch.zeros(1, 3, in_shape, in_shape)
-        wt_coeffs = pywt.wavedec2(x0, wavelet='haar', level=level, axes=(-2, -1))
-        _, slice = pywt.coeffs_to_array(wt_coeffs, axes=(-2, -1))
         self.slice = slice
         self.level = level
+        self.wavelet = wavelet
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         device = x.device
         x = x.detach().cpu().numpy()
-        x = pywt.wavedec2(x, wavelet='haar', level=self.level, axes=(-2, -1))
+        x = pywt.wavedec2(x, wavelet=self.wavelet, level=self.level, axes=(-2, -1))
         x, _ = pywt.coeffs_to_array(x, axes=(-2, -1))
         x = torch.tensor(x, device=device)
         return x
@@ -149,11 +146,11 @@ class WT(OrthoLinearFunction):
         x = x.detach().cpu().numpy()
         slice = self._get_slice(x)
         x = pywt.array_to_coeffs(x, slice, output_format='wavedec2')
-        x = pywt.waverec2(x, wavelet='haar', axes=(-2, -1))
+        x = pywt.waverec2(x, wavelet=self.wavelet, axes=(-2, -1))
         x = torch.tensor(x, device=device)
         return x
 
     def _get_slice(self, x: np.array): # TODO: can we remove this?
-        x = pywt.wavedec2(x, wavelet='haar', level=self.level, axes=(-2, -1))
+        x = pywt.wavedec2(x, wavelet=self.wavelet, level=self.level, axes=(-2, -1))
         _, slice = pywt.coeffs_to_array(x, axes=(-2, -1))
         return slice
