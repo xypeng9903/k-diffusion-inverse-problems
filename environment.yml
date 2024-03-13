@@ -72,6 +72,7 @@ dependencies:
   - xz=5.4.2
   - zlib=1.2.13
   - zstd=1.5.5
+  - mpi4py==3.1.4
   - pip:
     - accelerate==0.20.3
     - appdirs==1.4.4
@@ -111,7 +112,6 @@ dependencies:
     - lxml==4.9.3
     - matplotlib==3.7.2
     - matplotlib-inline==0.1.6
-    - mpi4py==3.1.4
     - networkx==3.1
     - opencv-python==4.8.0.74
     - packaging==23.1

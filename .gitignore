@@ -6,3 +6,7 @@ output.log
 nohup.out
 linear_vae.py
 quick_start/dct_var/copy_checkpoint.sh
+*.err
+*.out
+**/*.pyc
+k_diffusion/__pycache__/augmentation.cpython-38.pyc

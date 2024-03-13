@@ -4,6 +4,9 @@ from abc import abstractmethod
 import torch
 from scipy.fft import dctn, idctn
 from einops.layers.torch import Rearrange
+import pywt
+import copy
+import numpy as np
 
 
 class AbstractLinearFunction:
@@ -45,128 +48,22 @@ class LinearFunction(torch.autograd.Function):
 class OrthoTransform:
     def __init__(self, ortho_tf_type=None):
         self.ortho_tf_type = ortho_tf_type
+        if ortho_tf_type is not None:
+            self.ot = __OT__[ortho_tf_type]()
+            self.iot = self.ot.inv()
 
     def __call__(self, x: torch.Tensor):
         if self.ortho_tf_type is None:
             return x
-        
-        elif self.ortho_tf_type == 'dct':
-            dct = DCT()
-            x = dct(x)
-            return x
-        
-        elif self.ortho_tf_type == 'dct8x8':
-            dct = PatchwiseDCT(8, 8)
-            x = dct(x)
-            return x
-        
         else:
-            raise ValueError('Invalid transform type')
+            return self.ot(x)
         
     def inv(self, x: torch.Tensor):
         if self.ortho_tf_type is None:
-            return x
-        
-        elif self.ortho_tf_type == 'dct':
-            idct = IDCT()
-            x = idct(x)
-            return x
-
-        elif self.ortho_tf_type == 'dct8x8':
-            idct = PatchwiseIDCT(8, 8)
-            x = idct(x)
-            return x
-        
+            return x        
         else:
-            raise ValueError('Invalid transform type')
+            return self.iot(x)
 
-
-class DCT(AbstractLinearFunction):
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = x.detach().cpu().numpy()
-        x = dctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        return x
-
-    def transpose(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = x.detach().cpu().numpy()
-        x = idctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        return x
-    
-
-class IDCT(AbstractLinearFunction):
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = x.detach().cpu().numpy()
-        x = idctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        return x
-
-    def transpose(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = x.detach().cpu().numpy()
-        x = dctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        return x
-    
-
-class PatchwiseDCT(AbstractLinearFunction):
-
-    def __init__(self, p1, p2) -> None:
-        super().__init__()
-        self.patch = Rearrange("b c (h p1) (w p2) -> b h w c p1 p2", p1=p1, p2=p2)
-        self.unpatch = Rearrange("b h w c p1 p2 -> b c (h p1) (w p2)", p1=p1, p2=p2)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[-1] % 8 == 0 and x.shape[-2] % 8 == 0
-        device = x.device
-        x = self.patch(x)
-        x = x.detach().cpu().numpy()
-        x = dctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        x = self.unpatch(x)
-        return x
-
-    def transpose(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = self.patch(x)
-        x = x.detach().cpu().numpy()
-        x = idctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        x = self.unpatch(x)
-        return x
-    
-
-class PatchwiseIDCT(AbstractLinearFunction):
-
-    def __init__(self, p1, p2) -> None:
-        super().__init__()
-        self.patch = Rearrange("b c (h p1) (w p2) -> b h w c p1 p2", p1=p1, p2=p2)
-        self.unpatch = Rearrange("b h w c p1 p2 -> b c (h p1) (w p2)", p1=p1, p2=p2)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = self.patch(x)
-        x = x.detach().cpu().numpy()
-        x = idctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        x = self.unpatch(x)
-        return x
-
-    def transpose(self, x: torch.Tensor) -> torch.Tensor:
-        device = x.device
-        x = self.patch(x)
-        x = x.detach().cpu().numpy()
-        x = dctn(x, norm='ortho')
-        x = torch.Tensor(x).to(device)
-        x = self.unpatch(x)
-        return x
-    
 
 class LazyOTCovariance(AbstractLinearFunction):
     r"""
@@ -186,3 +83,77 @@ class LazyOTCovariance(AbstractLinearFunction):
     
     def transpose(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward(x)
+
+
+#--------------------------------
+# Orthogonal transform instances
+#--------------------------------
+
+__OT__ = dict()
+          
+
+def register_ot(name: str):
+    def wrapper(cls):
+        __OT__[name] = cls
+        return cls
+    return wrapper
+
+
+class OrthoLinearFunction(AbstractLinearFunction):
+
+    def inv(self) -> OrthoLinearFunction:
+        out = copy.deepcopy(self)
+        out.forward, out.transpose = out.transpose, out.forward
+        return out
+
+
+@register_ot('dct')
+class DCT(OrthoLinearFunction):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        device = x.device
+        x = x.detach().cpu().numpy()
+        x = dctn(x, norm='ortho')
+        x = torch.Tensor(x).to(device)
+        return x
+
+    def transpose(self, x: torch.Tensor) -> torch.Tensor:
+        device = x.device
+        x = x.detach().cpu().numpy()
+        x = idctn(x, norm='ortho')
+        x = torch.Tensor(x).to(device)
+        return x
+    
+
+@register_ot('wt')
+class WT(OrthoLinearFunction):
+
+    def __init__(self, in_shape=256, level=5) -> None:
+        super().__init__()
+        x0 = torch.zeros(1, 3, in_shape, in_shape)
+        wt_coeffs = pywt.wavedec2(x0, wavelet='haar', level=level, axes=(-2, -1))
+        _, slice = pywt.coeffs_to_array(wt_coeffs, axes=(-2, -1))
+        self.slice = slice
+        self.level = level
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        device = x.device
+        x = x.detach().cpu().numpy()
+        x = pywt.wavedec2(x, wavelet='haar', level=self.level, axes=(-2, -1))
+        x, _ = pywt.coeffs_to_array(x, axes=(-2, -1))
+        x = torch.tensor(x, device=device)
+        return x
+    
+    def transpose(self, x: torch.Tensor) -> torch.Tensor:
+        device = x.device
+        x = x.detach().cpu().numpy()
+        slice = self._get_slice(x)
+        x = pywt.array_to_coeffs(x, slice, output_format='wavedec2')
+        x = pywt.waverec2(x, wavelet='haar', axes=(-2, -1))
+        x = torch.tensor(x, device=device)
+        return x
+
+    def _get_slice(self, x: np.array): # TODO: can we remove this?
+        x = pywt.wavedec2(x, wavelet='haar', level=self.level, axes=(-2, -1))
+        _, slice = pywt.coeffs_to_array(x, axes=(-2, -1))
+        return slice
