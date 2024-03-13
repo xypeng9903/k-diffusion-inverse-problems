@@ -27,7 +27,6 @@ class AbstractLinearFunction:
         linear_func = LinearFunction.apply
         return linear_func(x, self)
     
-    
 
 class LinearFunction(torch.autograd.Function):
 
@@ -43,6 +42,10 @@ class LinearFunction(torch.autograd.Function):
         grad_input = linear_func.transpose(grad_output)
         return grad_input, None
     
+
+#----------------------
+# Orthogonal transform
+#----------------------
 
 class OrthoTransform:
     def __init__(self, ortho_tf_type=None):
@@ -63,30 +66,6 @@ class OrthoTransform:
         else:
             return self.iot(x)
 
-
-class LazyOTCovariance(AbstractLinearFunction):
-    r"""
-    Covariance with the form C = W @ diag(v) @ W.T for some "OrthoTransform" W.T 
-    """
-
-    def __init__(self, ortho_tf: OrthoTransform, variance: torch.Tensor) -> None:
-        super().__init__()
-        self.ortho_tf = ortho_tf
-        self.variance = variance
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.ortho_tf(x)
-        x = x * self.variance
-        x = self.ortho_tf.inv(x)
-        return x
-    
-    def transpose(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward(x)
-
-
-#--------------------------------
-# Orthogonal transform instances
-#--------------------------------
 
 __OT__ = dict()
           
@@ -154,3 +133,27 @@ class DiscreteWaveletTransform(OrthoLinearFunction):
         x = pywt.wavedec2(x, wavelet=self.wavelet, level=self.level, axes=(-2, -1))
         _, slice = pywt.coeffs_to_array(x, axes=(-2, -1))
         return slice
+
+
+#----------------------
+# Posterior covariance
+#----------------------
+
+class LazyOTCovariance(AbstractLinearFunction):
+    r"""
+    Covariance with the form C = W @ diag(v) @ W.T for some "OrthoTransform" W.T 
+    """
+
+    def __init__(self, ortho_tf: OrthoTransform, variance: torch.Tensor) -> None:
+        super().__init__()
+        self.ortho_tf = ortho_tf
+        self.variance = variance
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.ortho_tf(x)
+        x = x * self.variance
+        x = self.ortho_tf.inv(x)
+        return x
+    
+    def transpose(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward(x)
