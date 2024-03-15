@@ -9,7 +9,6 @@ from lightning.pytorch.loggers import TensorBoardLogger
 
 from guided_diffusion import dist_util
 from guided_diffusion.script_util import (
-    NUM_CLASSES,
     model_and_diffusion_defaults,
     create_model_and_diffusion,
     args_to_dict
@@ -62,11 +61,7 @@ def main():
     train_set = K.utils.FolderOfImages(config['dataset']['location'], transform=tf)
     train_dl = data.DataLoader(train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True)
     
-    trainer = L.Trainer(
-        devices=2, num_nodes=1,
-        strategy='ddp_find_unused_parameters_true', 
-        logger=TensorBoardLogger('runs', 'train_openai')
-    )
+    trainer = L.Trainer(logger=TensorBoardLogger('runs', 'train_openai'))
     trainer.fit(model, train_dl, ckpt_path=args.checkpoint)
 
 
