@@ -633,7 +633,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps, y=None):
+    def forward(self, x, timesteps, y=None, return_feature=False):
         """
         Apply the model to an input batch.
 
@@ -662,7 +662,10 @@ class UNetModel(nn.Module):
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
         h = h.type(x.dtype)
-        return self.out(h)
+        if return_feature:
+            return h
+        else:
+            return self.out(h)
 
 
 class SuperResModel(UNetModel):

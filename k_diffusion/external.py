@@ -138,7 +138,7 @@ class OpenAIDenoiserV2(DiscreteEpsDDPMDenoiser):
     def __init__(self, model, diffusion, quantize=False, device='cpu', ortho_tf_type=None):
         alphas_cumprod = torch.tensor(diffusion.alphas_cumprod, device=device, dtype=torch.float32)
         super().__init__(model, alphas_cumprod, quantize=quantize)
-        self.out_cov = nn.Conv2d(3 * 2, 3 * 3, 1)
+        self.out_cov = nn.Conv2d(128, 3 * 3, 1)
         self.ortho_tf_type = ortho_tf_type
         self.ortho_tf = OrthoTransform(ortho_tf_type)
     
@@ -161,7 +161,7 @@ class OpenAIDenoiserV2(DiscreteEpsDDPMDenoiser):
     def forward(self, input, sigma, return_variance=False):
         c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
         model_output, logvar, logvar_ot = \
-            self.out_cov(self.inner_model(input * c_in, self.sigma_to_t(sigma))).chunk(3, dim=1)
+            self.out_cov(self.inner_model(input * c_in, self.sigma_to_t(sigma), return_feature=True)).chunk(3, dim=1)
         if return_variance:
             return model_output, logvar, logvar_ot
         else:
