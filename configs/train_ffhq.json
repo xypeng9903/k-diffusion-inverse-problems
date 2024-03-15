@@ -1,0 +1,25 @@
+{
+    "model": {
+        "type": "openai_ffhq",
+        "input_channels": 3,
+        "input_size": [256, 256],
+        "sigma_min": 1e-2,
+        "sigma_max": 80,
+        "augment_prob": 0.12,
+        "sigma_sample_density": {
+            "type": "lognormal",
+            "mean": -1.2,
+            "std": 1.2
+        },
+        "openai": {
+            "num_channels": 128,
+            "num_res_blocks": 1,
+            "attention_resolutions": "16"
+        },
+        "ortho_tf_type": "dwt"
+    },
+    "dataset": {
+        "type": "imagefolder",
+        "location": "../data/train/ffhq256"
+    }
+}

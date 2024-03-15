@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from . import sampling, utils
+from condition.utils import OrthoTransform
 
 
 class VDenoiser(nn.Module):
@@ -129,6 +130,42 @@ class OpenAIDenoiser(DiscreteEpsDDPMDenoiser):
             else:
                 return model_output.chunk(2, dim=1)[0]
         return model_output
+
+
+class OpenAIDenoiserV2(DiscreteEpsDDPMDenoiser):
+    """A wrapper for OpenAI diffusion models."""
+
+    def __init__(self, model, diffusion, quantize=False, device='cpu', ortho_tf_type=None):
+        alphas_cumprod = torch.tensor(diffusion.alphas_cumprod, device=device, dtype=torch.float32)
+        super().__init__(model, alphas_cumprod, quantize=quantize)
+        self.out_cov = nn.Conv2d(3 * 2, 3 * 3, 1)
+        self.ortho_tf_type = ortho_tf_type
+        self.ortho_tf = OrthoTransform(ortho_tf_type)
+    
+    def loss(self, input, noise, sigma, **kwargs):
+        c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+        noised_input = input + noise * utils.append_dims(sigma, input.ndim)
+        model_output, logvar, logvar_ot = self(noised_input * c_in, sigma, return_variance=True)
+        ot = self.ortho_tf
+        target = (input - noised_input) / c_out
+        
+        error = (model_output - target).pow(2)
+        error_ot = (ot(model_output) - ot(target)).pow(2)
+
+        loss = error / logvar.exp() + logvar
+        loss_ot = error_ot / logvar_ot.exp() + logvar_ot  
+        losses = loss + loss_ot
+        
+        return losses.flatten(1).mean(1)
+
+    def forward(self, input, sigma, return_variance=False):
+        c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+        model_output, logvar, logvar_ot = \
+            self.out_cov(self.inner_model(input * c_in, self.sigma_to_t(sigma))).chunk(3, dim=1)
+        if return_variance:
+            return model_output, logvar, logvar_ot
+        else:
+            return input + model_output * c_out
 
 
 class CompVisDenoiser(DiscreteEpsDDPMDenoiser):
