@@ -5,7 +5,7 @@
         "input_size": [256, 256],
         "augment_prob": 0.12,
         "sigma_min": 1e-2,
-        "sigma_max": 80,
+        "sigma_max": 160,
         "sigma_data": 0.5,
         "sigma_sample_density": {
             "type": "cosine"

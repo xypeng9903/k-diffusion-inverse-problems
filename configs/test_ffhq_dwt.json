@@ -1,0 +1,24 @@
+{
+    "model": {
+        "type": "openai_ffhq",
+        "input_channels": 3,
+        "input_size": [256, 256],
+        "augment_prob": 0.12,
+        "sigma_min": 1e-2,
+        "sigma_max": 160,
+        "sigma_data": 0.5,
+        "sigma_sample_density": {
+            "type": "cosine"
+        },
+        "openai": {
+            "num_channels": 128,
+            "num_res_blocks": 1,
+            "attention_resolutions": "16"
+        },
+        "ortho_tf_type": "dwt"
+    },
+    "dataset": {
+        "type": "imagefolder",
+        "location": "../data/test/ffhq_val"
+    }
+}

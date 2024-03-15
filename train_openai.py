@@ -32,7 +32,7 @@ def save_yaml(data: dict, file_path: str):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--config', type=str, default='configs/train_ffhq.json')
+    p.add_argument('--config', type=str, default='configs/train_ffhq_dwt.json')
     p.add_argument('--openai-ckpt', type=str, default=None)
     p.add_argument('--batch-size', type=int, default=16)
     p.add_argument('--lr', type=float, default=1e-4)
