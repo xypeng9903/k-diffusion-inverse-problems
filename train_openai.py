@@ -5,6 +5,7 @@ import torch
 from torchvision import transforms
 from torch.utils import data
 import os
+from lightning.pytorch.loggers import TensorBoardLogger
 
 from guided_diffusion import dist_util
 from guided_diffusion.script_util import (
@@ -61,8 +62,11 @@ def main():
     train_set = K.utils.FolderOfImages(config['dataset']['location'], transform=tf)
     train_dl = data.DataLoader(train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True)
     
-    trainer = L.Trainer()
-    trainer.fit(model, train_dl)
+    trainer = L.Trainer(
+        strategy='ddp_find_unused_parameters_true', 
+        logger=TensorBoardLogger('runs', 'train_openai')
+    )
+    trainer.fit(model, train_dl, ckpt_path=args.checkpoint)
 
 
 class OpenAIDenoiser(L.LightningModule):
@@ -81,7 +85,8 @@ class OpenAIDenoiser(L.LightningModule):
         reals, _, _ = batch[0]
         noise = torch.randn_like(reals)
         sigma = sample_density([reals.shape[0]], device=self.device)
-        loss = self.model.loss(reals, noise, sigma)
+        loss = self.model.loss(reals, noise, sigma).mean()
+        self.log('loss', loss, prog_bar=True)
         return loss
     
     def on_train_epoch_start(self) -> None:
