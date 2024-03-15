@@ -3,9 +3,9 @@
 #SBATCH --job-name=openai_dwt
 #SBATCH --partition=dgx2
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=6
-#SBATCH --gres=gpu:2     
+#SBATCH --gres=gpu:4     
 #SBATCH --mail-type=end
 #SBATCH --mail-user=xypeng9903@outlook.com
 #SBATCH --output=%j.out

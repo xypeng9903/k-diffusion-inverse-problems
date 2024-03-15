@@ -145,7 +145,7 @@ class OpenAIDenoiserV2(DiscreteEpsDDPMDenoiser):
     def loss(self, input, noise, sigma, **kwargs):
         c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
         noised_input = input + noise * utils.append_dims(sigma, input.ndim)
-        model_output, logvar, logvar_ot = self(noised_input * c_in, sigma, return_variance=True)
+        model_output, logvar, logvar_ot = self(noised_input, sigma, return_variance=True)
         ot = self.ortho_tf
         target = (input - noised_input) / c_out
         

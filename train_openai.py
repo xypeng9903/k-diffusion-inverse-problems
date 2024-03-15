@@ -37,7 +37,7 @@ def main():
     p.add_argument('--batch-size', type=int, default=16)
     p.add_argument('--lr', type=float, default=1e-4)
     p.add_argument('--checkpoint', type=str, default=None)
-    p.add_argument('--num-workers', type=int, default=4)
+    p.add_argument('--num-workers', type=int, default=8)
 
     args = p.parse_args()
     config = load_yaml(args.config)
