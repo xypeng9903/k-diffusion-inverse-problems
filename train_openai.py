@@ -74,7 +74,7 @@ class OpenAIDenoiser(L.LightningModule):
         self.train_config = train_config
 
         inner_model, diffusion = self._create_inner_model(train_config['openai_ckpt'])
-        self.model = OpenAIDenoiserV2(inner_model, diffusion, model_config['ortho_tf_type'])
+        self.model = OpenAIDenoiserV2(inner_model, diffusion, ortho_tf_type=model_config['ortho_tf_type'])
 
     def training_step(self, batch, batch_idx):
         sample_density = K.config.make_sample_density(self.model_config)
