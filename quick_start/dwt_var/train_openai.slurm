@@ -15,4 +15,4 @@ module load gcc cuda
 
 ./cudaTensorCoreGemm
 
-bash quick_start/dwt_var/train_openai.sh
+srun python train_openai.py --openai-ckpt ../model_zoo/diffusion_ffhq_10m.pt --batch-size 12
