@@ -1,12 +1,7 @@
+import torch
 from torch import nn
 from torch.autograd import grad
-import torch
-from k_diffusion.external import OpenAIDenoiser
-from k_diffusion.models import ImageDenoiserModelV2
-from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
-from k_diffusion import utils
 from torch.fft import fft2, ifft2
-import condition.diffpir_utils.utils_sisr as sr
 from scipy.sparse.linalg import cg, LinearOperator
 import numpy as np
 from warnings import warn
@@ -14,7 +9,11 @@ from abc import abstractmethod
 from functools import partial
 import gpytorch
 from gpytorch.distributions import MultivariateNormal
+
+import condition.diffpir_utils.utils_sisr as sr
 from .utils import OrthoTransform, LazyOTCovariance
+from k_diffusion.external import OpenAIDenoiser, OpenAIDenoiserV2
+from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 
 
 class LazyLikelihoodCovariance(gpytorch.LinearOperator):
@@ -269,11 +268,11 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
         return x0_mean, x0_var, x0_var
 
 
-class ConditionImageDenoiserV2(ConditionDenoiser):
+class ConditionOpenAIDenoiserV2(ConditionDenoiser):
 
     def __init__(
         self, 
-        denoiser: ImageDenoiserModelV2,
+        denoiser: OpenAIDenoiserV2,
         operator, 
         measurement, 
         guidance, 
@@ -299,10 +298,10 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
             assert ortho_tf_type == denoiser.ortho_tf_type
 
     def uncond_pred(self, x, sigma):
-        c_skip, c_out, c_in = self.denoiser.get_scalings(sigma)
+        c_out, c_in = self.denoiser.get_scalings(sigma)
         model_output, logvar, logvar_ot = self.denoiser(x, sigma, return_variance=True)
 
-        x0_mean = model_output * c_out + x * c_skip
+        x0_mean = model_output * c_out + x
 
         if sigma < self.mle_sigma_thres:
             x0_var = logvar.exp() * c_out.pow(2)

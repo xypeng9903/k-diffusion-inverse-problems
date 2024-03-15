@@ -3,24 +3,21 @@
 """Samples from k-diffusion models."""
 
 import argparse
-import math
-
 import accelerate
 import torch
-from tqdm import trange, tqdm
-
-import k_diffusion as K
-from condition.condition import ConditionImageDenoiserV2
-from condition.measurements import get_operator
-
+from tqdm import tqdm
 from torch.utils import data
-from torchvision import datasets, transforms, utils
-
+from torchvision import transforms
 import yaml
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
 import os
 from functools import partial
+
+import k_diffusion as K
+from condition.condition import ConditionOpenAIDenoiserV2
+from condition.measurements import get_operator
+from train_openai import OpenAIDenoiser
 
 
 def load_yaml(file_path: str) -> dict:
@@ -112,10 +109,7 @@ def main():
     device = accelerator.device
     print(f'Using device: {device}', flush=True)
 
-    inner_model = K.config.make_model(config)
-    model = K.config.make_denoiser_wrapper(config)(inner_model)
-    ckpt = torch.load(args.checkpoint, map_location='cpu')
-    accelerator.unwrap_model(model.inner_model).load_state_dict(ckpt['model_ema'])
+    model = OpenAIDenoiser.load_from_checkpoint(args.checkpoint).model
 
     sigma_min = model_config['sigma_min']
     sigma_max = model_config['sigma_max']
@@ -153,7 +147,7 @@ def main():
         for i, batch in enumerate(tqdm(test_dl)):
             x0, = batch
             measurement = operator.forward(x0.clone(), flatten=True)
-            cond_model = ConditionImageDenoiserV2(
+            cond_model = ConditionOpenAIDenoiserV2(
                 denoiser=model,
                 operator=operator,
                 measurement=measurement,
