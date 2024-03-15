@@ -663,7 +663,7 @@ class UNetModel(nn.Module):
             h = module(h, emb)
         h = h.type(x.dtype)
         if return_feature:
-            return h
+            return self.out(h), h
         else:
             return self.out(h)
 
