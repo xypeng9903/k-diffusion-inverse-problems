@@ -91,6 +91,7 @@ class OpenAIDenoiser(L.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.train_config['lr'])
         return optimizer
     
+    @torch.no_grad()
     def sample(self):
         c, (h, w) = self.model_config['input_channels'], self.model_config['input_size']
         sigma_min = float(self.model_config['sigma_min'])

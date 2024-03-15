@@ -3,13 +3,12 @@
         "type": "openai_ffhq",
         "input_channels": 3,
         "input_size": [256, 256],
+        "augment_prob": 0.12,
         "sigma_min": 1e-2,
         "sigma_max": 80,
-        "augment_prob": 0.12,
+        "sigma_data": 0.5,
         "sigma_sample_density": {
-            "type": "lognormal",
-            "mean": -1.2,
-            "std": 1.2
+            "type": "cosine"
         },
         "openai": {
             "num_channels": 128,
