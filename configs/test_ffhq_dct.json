@@ -25,21 +25,5 @@
     "dataset": {
         "type": "imagefolder",
         "location": "../data/test/ffhq_val"
-    },
-    "optimizer": {
-        "type": "adamw",
-        "lr": 1e-4,
-        "betas": [0.95, 0.999],
-        "eps": 1e-6,
-        "weight_decay": 1e-3
-    },
-    "lr_sched": {
-        "type": "constant",
-        "warmup": 0.0
-    },
-    "ema_sched": {
-        "type": "inverse",
-        "power": 0.6667,
-        "max_value": 0.9999
     }
 }

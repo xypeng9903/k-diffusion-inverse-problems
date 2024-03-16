@@ -1,0 +1,1 @@
+python train_openai.py --openai-ckpt ../model_zoo/diffusion_ffhq_10m.pt --batch-size 12

@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 
-"""Samples from k-diffusion models."""
-
 import argparse
 import math
-
 import accelerate
 import torch
 from tqdm import trange, tqdm
-
-import k_diffusion as K
-from condition.condition import ConditionImageDenoiserV2
-from condition.measurements import get_operator
-
 from torch.utils import data
 from torchvision import datasets, transforms, utils
-
 import yaml
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
 import os
 from functools import partial
+
+import k_diffusion as K
+from condition.condition import ConditionImageDenoiserV2
+from condition.measurements import get_operator
 
 
 def load_yaml(file_path: str) -> dict:
@@ -84,7 +79,7 @@ def main():
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--zeta', type=float, default=None)
     p.add_argument('--mle-sigma-thres', type=float, default=1)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_v2", "temp"))
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", f"{__file__[:-3]}", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
     p.add_argument('--euler', dest='euler', action='store_true')
