@@ -22,7 +22,9 @@ ___________
   - [Setup Conda Environment](#setup-conda-environment)
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
-  - [Additional Results With DCT Variance](#additional-results-with-dct-variance)
+  - [Additional Results With Latent Variance](#additional-results-with-latent-variance)
+    - [Discrete Cosince Transform](#discrete-cosine-transform)
+    - [Discrete Wavelet Transform](#discrete-wavelet-transform)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 
@@ -37,7 +39,7 @@ without retraining for specific inverse problems. In this paper, we propose the 
 ### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
 We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi GDM$](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
+**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi$GDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
 
 $$
 \mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
@@ -117,18 +119,26 @@ bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
 bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
 ```
 
-## Additional Results With DCT Variance
-We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint "ffhq_dct.pth" and paste it to "../model_zoo".
+## Additional Results With Latent Variance
+### Discrete Cosine Transform
+We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results based on learned Discrete Cosine Transform (DCT) variance, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint "ffhq_dct.pth" and paste it to "../model_zoo".
 
 For reproducing results on FFHQ dataset in Table 5, run
 ```bash
-bash quick_start/dct_var/eval_guidance_II.sh 0
-bash quick_start/dct_var/eval_guidance_II.sh 1
-bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
-
 bash quick_start/dct_var/eval_guidance_I.sh 0
 bash quick_start/dct_var/eval_guidance_I.sh 1
 bash quick_start/dct_var/eval_guidance_I_spatial_var.sh 0.2
+
+bash quick_start/dct_var/eval_guidance_II.sh 0
+bash quick_start/dct_var/eval_guidance_II.sh 1
+bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
+```
+### Discrete Wavelet Transform
+We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. To test the performance with DWT variance, please download the FFHQ checkpoint "ffhq_dwt.ckpt" from the [link]() to "../model_zoo", and test with
+
+```bash
+bash quick_start/dwt_var/eval_guidance_II.sh 1
+bash quick_start/dwt_var/eval_guidance_I.sh 1
 ```
 
 
