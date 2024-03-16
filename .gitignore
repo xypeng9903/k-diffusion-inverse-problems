@@ -1,10 +1,6 @@
 runs/*
-model_zoo/*
-output.log
 nohup.out
-linear_vae.py
-quick_start/dct_var/copy_checkpoint.sh
 *.err
 *.out
 **/__pycache__
-lightning_logs/
+**/**/__pycache__
