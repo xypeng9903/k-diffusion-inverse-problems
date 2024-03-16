@@ -36,6 +36,7 @@ def main():
     p.add_argument('--openai-ckpt', type=str, default=None)
     p.add_argument('--batch-size', type=int, default=16)
     p.add_argument('--lr', type=float, default=1e-4)
+    p.add_argument('--accumulate-grad-batches', type=int, default=1)
     p.add_argument('--checkpoint', type=str, default=None)
     p.add_argument('--num-workers', type=int, default=8)
 
@@ -45,6 +46,7 @@ def main():
     train_config = {
         'batch_size': args.batch_size,
         'lr': args.lr,
+        'accumulate_grad_batches': args.accumulate_grad_batches,
         'openai_ckpt': args.openai_ckpt
     }
 
@@ -61,7 +63,10 @@ def main():
     train_set = K.utils.FolderOfImages(config['dataset']['location'], transform=tf)
     train_dl = data.DataLoader(train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True)
     
-    trainer = L.Trainer(logger=TensorBoardLogger('runs', 'train_openai'))
+    trainer = L.Trainer(
+        logger=TensorBoardLogger('runs', 'train_openai'),
+        accumulate_grad_batches=args.accumulate_grad_batches,
+    )
     trainer.fit(model, train_dl, ckpt_path=args.checkpoint)
 
 
