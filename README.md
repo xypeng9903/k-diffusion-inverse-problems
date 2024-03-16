@@ -22,7 +22,7 @@ ___________
   - [Setup Conda Environment](#setup-conda-environment)
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
-  - [Additional Results With Latent Variance](#additional-results-with-latent-variance)
+  - [Additional Results with Latent Variance](#additional-results-with-latent-variance)
     - [Discrete Cosince Transform](#discrete-cosine-transform)
     - [Discrete Wavelet Transform](#discrete-wavelet-transform)
 - [Citation](#citation)
@@ -59,7 +59,7 @@ $$
 
 which can be intepreted as compute the mean of an approximate distribution $q_t(x_0|x_t,y) \propto p(y|x_0)q_t(x_0|x_t)$  for the conditional posterior $p_t(x_0|x_t,y)\propto p(y|x_0)p_t(x_0|x_t)$.
 
-### Solving Inverse Problems With Optimal Posterior Covariance
+### Solving Inverse Problems with Optimal Posterior Covariance
 
 In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(x_0|x_t)=\mathcal{N}(\mu_t(x_t), \Sigma_t(x_t))$, such that
 
@@ -119,7 +119,7 @@ bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
 bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
 ```
 
-## Additional Results With Latent Variance
+## Additional Results with Latent Variance
 ### Discrete Cosine Transform
 We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results based on learned Discrete Cosine Transform (DCT) variance, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint "ffhq_dct.pth" and paste it to "../model_zoo".
 
@@ -134,11 +134,15 @@ bash quick_start/dct_var/eval_guidance_II.sh 1
 bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
 ```
 ### Discrete Wavelet Transform
-We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. To test the performance with DWT variance, please download the FFHQ checkpoint "ffhq_dwt.ckpt" from the [link]() to "../model_zoo", and test with
+We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. Example model outputs (bottom) are given as follows:
+
+![DWT Variance](assests/dwt.png "Example model outputs")
+
+To test the performance with DWT variance, please download the FFHQ checkpoint "ffhq_dwt.ckpt" from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to "../model_zoo", and test with
 
 ```bash
-bash quick_start/dwt_var/eval_guidance_II.sh 1
 bash quick_start/dwt_var/eval_guidance_I.sh 1
+bash quick_start/dwt_var/eval_guidance_II.sh 1
 ```
 
 
