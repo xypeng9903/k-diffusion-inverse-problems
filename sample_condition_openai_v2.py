@@ -66,9 +66,8 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('--batch-size', type=int, default=1,
                    help='the batch size')
-    p.add_argument('--checkpoint', type=str, required=True,
-                   help='the checkpoint to use')
-    p.add_argument('--config', type=str, default="configs/test_ffhq_dct.json",
+    p.add_argument('--checkpoint', type=str, default='../model_zoo/ffhq_dwt.ckpt')
+    p.add_argument('--config', type=str, default="configs/test_ffhq_dwt.json",
                    help='the model config')
     p.add_argument('--operator-config', type=str, default="configs/gaussian_deblur_config.yaml")
     p.add_argument('-n', type=int, default=1,
@@ -81,7 +80,7 @@ def main():
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--zeta', type=float, default=None)
     p.add_argument('--mle-sigma-thres', type=float, default=1)
-    p.add_argument('--logdir', type=str, default=os.path.join("runs", "sample_condition_v2", "temp"))
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", f"{__file__[:-3]}", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
     p.add_argument('--ode', dest='ode', action='store_true')
     p.add_argument('--euler', dest='euler', action='store_true')

@@ -64,7 +64,7 @@ def main():
     train_dl = data.DataLoader(train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True)
     
     trainer = L.Trainer(
-        logger=TensorBoardLogger('runs', 'train_openai'),
+        logger=TensorBoardLogger('runs', f"{__file__[:-3]}"),
         accumulate_grad_batches=args.accumulate_grad_batches,
     )
     trainer.fit(model, train_dl, ckpt_path=args.checkpoint)
