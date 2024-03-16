@@ -23,7 +23,7 @@ ___________
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
   - [Additional Results with Latent Variance](#additional-results-with-latent-variance)
-    - [Discrete Cosince Transform](#discrete-cosine-transform)
+    - [Discrete Cosine Transform](#discrete-cosine-transform)
     - [Discrete Wavelet Transform](#discrete-wavelet-transform)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
