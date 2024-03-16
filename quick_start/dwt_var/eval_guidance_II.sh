@@ -9,9 +9,9 @@ python sample_condition_openai_v2.py \
 --save-img \
 --config ${CONFIG} \
 --checkpoint ${CHECKPOINT} \
---operator-config configs/motion_deblur_config.yaml \
---logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/motion_deblur/mle_sigma_thres_${MLE_SIGMA_THRES} \
---mle-sigma-thres ${MLE_SIGMA_THRES} 
+--operator-config configs/inpainting_config.yaml \
+--logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/inpaint/mle_sigma_thres_${MLE_SIGMA_THRES} \
+--mle-sigma-thres ${MLE_SIGMA_THRES}
 
 python sample_condition_openai_v2.py \
 --guidance II \
@@ -20,16 +20,16 @@ python sample_condition_openai_v2.py \
 --checkpoint ${CHECKPOINT} \
 --operator-config configs/gaussian_deblur_config.yaml \
 --logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/gaussian_deblur/mle_sigma_thres_${MLE_SIGMA_THRES} \
---mle-sigma-thres ${MLE_SIGMA_THRES}
+--mle-sigma-thres ${MLE_SIGMA_THRES} \
 
 python sample_condition_openai_v2.py \
 --guidance II \
 --save-img \
 --config ${CONFIG} \
 --checkpoint ${CHECKPOINT} \
---operator-config configs/inpainting_config.yaml \
---logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/inpaint/mle_sigma_thres_${MLE_SIGMA_THRES} \
---mle-sigma-thres ${MLE_SIGMA_THRES}
+--operator-config configs/motion_deblur_config.yaml \
+--logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/motion_deblur/mle_sigma_thres_${MLE_SIGMA_THRES} \
+--mle-sigma-thres ${MLE_SIGMA_THRES} 
 
 python sample_condition_openai_v2.py \
 --guidance II \

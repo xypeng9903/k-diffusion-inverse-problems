@@ -311,6 +311,51 @@ class ConditionOpenAIDenoiserV2(ConditionDenoiser):
             theta0_var = sigma.pow(2) / (1 + sigma.pow(2))
 
         return x0_mean, x0_var, theta0_var
+    
+
+class ConditionImageDenoiserV2(ConditionDenoiser):
+
+    def __init__(
+        self, 
+        denoiser: OpenAIDenoiserV2,
+        operator, 
+        measurement, 
+        guidance, 
+        device='cpu', 
+        zeta=None, 
+        lambda_=None, 
+        mle_sigma_thres=1, 
+        ortho_tf_type=None
+    ):
+
+        super().__init__(
+            operator=operator, 
+            measurement=measurement, 
+            guidance=guidance,
+            device=device,
+            zeta=zeta,
+            lambda_=lambda_,
+            mle_sigma_thres=mle_sigma_thres,
+            ortho_tf_type=ortho_tf_type
+        )
+        self.denoiser = denoiser
+        if ortho_tf_type is not None:
+            assert ortho_tf_type == denoiser.ortho_tf_type
+
+    def uncond_pred(self, x, sigma):
+        c_skip, c_out, c_in = self.denoiser.get_scalings(sigma)
+        model_output, logvar, logvar_ot = self.denoiser(x, sigma, return_variance=True)
+
+        x0_mean = model_output * c_out + x * c_skip
+
+        if sigma < self.mle_sigma_thres:
+            x0_var = logvar.exp() * c_out.pow(2)
+            theta0_var = logvar_ot.exp() * c_out.pow(2)
+        else:
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2))
+            theta0_var = sigma.pow(2) / (1 + sigma.pow(2))
+
+        return x0_mean, x0_var, theta0_var
 
 
 #----------------------------------------------------------------
