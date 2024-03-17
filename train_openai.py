@@ -86,6 +86,7 @@ class OpenAIDenoiser(L.LightningModule):
         self.ema_sched = K.utils.EMAWarmup(**train_config['ema_sched'])
     
     def training_step(self, batch, batch_idx):
+        self._update_model_ema() 
         sample_density = K.config.make_sample_density(self.model_config)
         reals, _, _ = batch[0]
         noise = torch.randn_like(reals)
