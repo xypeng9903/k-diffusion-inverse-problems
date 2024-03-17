@@ -16,7 +16,7 @@ module load gcc cuda
 ./cudaTensorCoreGemm
 
 srun python train_openai.py \
-    --checkpoint runs/train_openai/version_5/checkpoints/epoch=43-step=27017.ckpt \
+    --checkpoint runs/train_openai/version_8/checkpoints/epoch=54-step=30790.ckpt \
     --batch-size 12 \
-    --accumulate-grad-batches 2 \
-    --num-workers 32
+    --accumulate-grad-batches 3 \
+    --num-workers 16

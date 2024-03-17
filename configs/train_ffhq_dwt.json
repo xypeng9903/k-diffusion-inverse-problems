@@ -20,5 +20,9 @@
     "dataset": {
         "type": "imagefolder",
         "location": "../data/train/ffhq256"
+    },
+    "ema_sched": {
+        "power": 0.6667,
+        "max_value": 0.9999
     }
 }
