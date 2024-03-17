@@ -133,10 +133,10 @@ class OpenAIDenoiser(L.LightningModule):
         self.ema_sched.step()
 
     def on_save_checkpoint(self, checkpoint):
-        checkpoint['ema_sched'] = self.ema_sched
+        checkpoint['ema_sched'] = self.ema_sched.state_dict()
 
     def on_load_checkpoint(self, checkpoint):
-        self.ema_sched = checkpoint['ema_sched']
+        self.ema_sched.load_state_dict(checkpoint['ema_sched'])
 
 
 if __name__ == "__main__":
