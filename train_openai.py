@@ -131,7 +131,13 @@ class OpenAIDenoiser(L.LightningModule):
         ema_decay = self.ema_sched.get_value()
         K.utils.ema_update(self.model, self.model_ema, ema_decay)
         self.ema_sched.step()
-            
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['ema_sched'] = self.ema_sched
+
+    def on_load_checkpoint(self, checkpoint):
+        self.ema_sched = checkpoint['ema_sched']
+
 
 if __name__ == "__main__":
     main()
