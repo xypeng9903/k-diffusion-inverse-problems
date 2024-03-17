@@ -95,8 +95,7 @@ class OpenAIDenoiser(L.LightningModule):
         self.log('loss', loss, prog_bar=True)
         return loss
     
-    def on_train_epoch_start(self) -> None:
-        self._update_model_ema() 
+    def on_train_epoch_start(self): 
         self.sample()
 
     def configure_optimizers(self):
@@ -111,7 +110,7 @@ class OpenAIDenoiser(L.LightningModule):
         sigmas = K.sampling.get_sigmas_karras(50, sigma_min, sigma_max, rho=7., device=self.device)
 
         x = torch.randn(1, c, h, w, device=self.device) * self.model_config['sigma_max']
-        x_0 = K.sampling.sample_dpmpp_2m(self.model_ema, x, sigmas)
+        x_0 = K.sampling.sample_dpmpp_2m(self.model_ema.eval(), x, sigmas)
         
         filename = os.path.join(self.logger.log_dir, f'step_{self.global_step}.png')
         K.utils.to_pil_image(x_0).save(filename)

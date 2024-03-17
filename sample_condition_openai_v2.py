@@ -108,7 +108,7 @@ def main():
     device = accelerator.device
     print(f'Using device: {device}', flush=True)
 
-    model = OpenAIDenoiser.load_from_checkpoint(args.checkpoint).model
+    model = OpenAIDenoiser.load_from_checkpoint(args.checkpoint).model_ema.eval()
 
     sigma_min = model_config['sigma_min']
     sigma_max = model_config['sigma_max']
