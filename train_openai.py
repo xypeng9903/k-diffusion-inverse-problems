@@ -6,6 +6,7 @@ from torchvision import transforms
 from torch.utils import data
 import os
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks import Callback
 from copy import deepcopy
 
 from guided_diffusion import dist_util
@@ -68,6 +69,7 @@ def main():
     trainer = L.Trainer(
         logger=TensorBoardLogger('runs', f"{__file__[:-3]}"),
         accumulate_grad_batches=args.accumulate_grad_batches,
+        callbacks=[ExponentialMovingAverage()]
     )
     trainer.fit(model, train_dl)
 
@@ -86,7 +88,6 @@ class OpenAIDenoiser(L.LightningModule):
         self.ema_sched = K.utils.EMAWarmup(**train_config['ema_sched'])
     
     def training_step(self, batch, batch_idx):
-        self._update_model_ema() 
         sample_density = K.config.make_sample_density(self.model_config)
         reals, _, _ = batch[0]
         noise = torch.randn_like(reals)
@@ -127,16 +128,16 @@ class OpenAIDenoiser(L.LightningModule):
             )
         return inner_model, diffusion
     
-    def _update_model_ema(self):
+    def ema_update(self):
+        self.ema_sched.last_epoch = self.global_step
         ema_decay = self.ema_sched.get_value()
         K.utils.ema_update(self.model, self.model_ema, ema_decay)
-        self.ema_sched.step()
 
-    def on_save_checkpoint(self, checkpoint):
-        checkpoint['ema_sched'] = self.ema_sched.state_dict()
 
-    def on_load_checkpoint(self, checkpoint):
-        self.ema_sched.load_state_dict(checkpoint['ema_sched'])
+class ExponentialMovingAverage(Callback):
+
+    def on_train_batch_end(self, trainer: L.Trainer, model: OpenAIDenoiser, *args):
+        model.ema_update()
 
 
 if __name__ == "__main__":
