@@ -194,8 +194,7 @@ class ConditionDenoiser(nn.Module):
         second_order_loss = 0
         for _ in range(self.num_hutchinson_samples):
             eps = torch.randn_like(x)
-            increased_x0_mean, x0_var, theta0_var = self.uncond_pred(x + eps, sigma)
-            second_order_loss += -(eps * (increased_x0_mean - x0_mean)).sum()
+            second_order_loss += -(grad((eps * x0_mean).sum(), x, retain_graph=True)[0] * eps).sum()
         second_order_loss /= self.num_hutchinson_samples
         loss = self.zeta * first_order_loss + self.gamma * second_order_loss
         likelihood_score = grad(loss, x)[0]
