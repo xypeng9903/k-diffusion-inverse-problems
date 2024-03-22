@@ -88,17 +88,23 @@ def main():
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
-    p.add_argument('--steps', type=int, default=50,
-                   help='the number of denoising steps')
-    p.add_argument('--guidance', type=str, default="I")
-    p.add_argument('--xstart-cov-type', type=str, choices=["analytic", "convert", "pgdm", "dps", "diffpir", "tmpd"], default="convert")
-    p.add_argument('--lam', type=float, default=None)
-    p.add_argument('--zeta', type=float, default=None)
-    p.add_argument('--mle-sigma-thres', type=float, default=0.2)
     p.add_argument('--logdir', type=str, default=os.path.join("runs", f"{__file__[:-3]}", "temp"))
     p.add_argument('--save-img', dest='save_img', action='store_true')
+    
+    # sampler
+    p.add_argument('--steps', type=int, default=50, help='the number of denoising steps')
     p.add_argument('--ode', dest='ode', action='store_true')
     p.add_argument('--euler', dest='euler', action='store_true')
+    
+    # guidance
+    p.add_argument('--guidance', type=str, default="I")
+    p.add_argument('--xstart-cov-type', type=str, choices=["analytic", "convert", "pgdm", "dps", "diffpir", "tmpd"], default="convert")
+    p.add_argument('--mle-sigma-thres', type=float, default=0.2)
+    p.add_argument('--lam', type=float, default=None)
+    p.add_argument('--zeta', type=float, default=None)
+    p.add_argument('--num-hutchinson-samples', type=int, default=None)
+    p.add_argument('--gamma', type=float, default=None)
+
 
 
     #-----------------------------------------
@@ -177,6 +183,8 @@ def main():
                 recon_mse=recon_mse,
                 lambda_=args.lam,
                 zeta=args.zeta,
+                gamma=args.gamma,
+                num_hutchinson_samples=args.num_hutchinson_samples,
                 mle_sigma_thres=args.mle_sigma_thres,
                 device=device
             ).eval()
