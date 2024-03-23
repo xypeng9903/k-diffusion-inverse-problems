@@ -1,6 +1,6 @@
 # Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance
 
-This repository contains the code and data associated with the paper "Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance" ([paper link](https://arxiv.org/abs/2402.02149)).
+This repository contains the code and data associated with the paper [Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance](https://arxiv.org/abs/2402.02149).
 
 This code is based on the 
 
@@ -24,7 +24,7 @@ ___________
   - [Reproduce Results](#reproduce-results)
   - [Additional Results with Latent Variance](#additional-results-with-latent-variance)
     - [Discrete Cosine Transform](#discrete-cosine-transform)
-    - [Discrete Wavelet Transform](#discrete-wavelet-transform)
+    - [Discrete Wavelet Transform (Best Performance)](#discrete-wavelet-transform)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 
@@ -39,7 +39,7 @@ without retraining for specific inverse problems. In this paper, we propose the 
 ### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
 We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [$\Pi$GDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
+**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
 
 $$
 \mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
@@ -88,12 +88,12 @@ conda activate k-diffusion
 ```
 
 ### Models and Analytic Variances
-From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkelbSX3xGZh?usp=sharing), download the FFHQ checkpoint "ffhq_10m.pt", rename to "diffusion_ffhq_10m.pt", and paste it to "../model_zoo".
+From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkelbSX3xGZh?usp=sharing), download the FFHQ checkpoint ```ffhq_10m.pt```, rename to ```diffusion_ffhq_10m.pt```, and paste it to ```../model_zoo```.
 
-To run guidance based on analytic posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to "./runs".
+To run guidance based on analytic posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to ```./runs```.
 
 ### Reproduce Results
-From the [link](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link), download the validation data (the first 100 images from [FFHQ](https://github.com/NVlabs/ffhq-dataset) and [ImageNet](https://image-net.org/) datasets), unzip and paste it to "../data".
+From the [link](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link), download the validation data (the first 100 images from [FFHQ](https://github.com/NVlabs/ffhq-dataset) and [ImageNet](https://image-net.org/) datasets), unzip and paste it to ```../data```.
 
 For reproducing results on FFHQ dataset in Table 3, run
 ```bash
@@ -121,7 +121,7 @@ bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
 
 ## Additional Results with Latent Variance
 ### Discrete Cosine Transform
-We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results based on learned Discrete Cosine Transform (DCT) variance, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint "ffhq_dct.pth" and paste it to "../model_zoo".
+We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results based on learned Discrete Cosine Transform (DCT) variance, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint ```ffhq_dct.pth``` and paste it to ```../model_zoo```.
 
 For reproducing results on FFHQ dataset in Table 5, run
 ```bash
@@ -136,9 +136,9 @@ bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
 ### Discrete Wavelet Transform
 We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. Example model outputs (bottom) are given as follows:
 
-![DWT Variance](assests/dwt.png "Example model outputs")
+![DWT Variance](assests/dwt.png ```Example model outputs```)
 
-To test the performance with DWT variance, please download the FFHQ checkpoint "ffhq_dwt.ckpt" from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to "../model_zoo", and test with
+To test the performance with DWT variance, please download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to ```../model_zoo```, and test with
 
 ```bash
 bash quick_start/dwt_var/eval_guidance_I.sh 1
