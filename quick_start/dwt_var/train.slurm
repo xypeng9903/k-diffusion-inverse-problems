@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --job-name=dwt_large
+#SBATCH --job-name=openai_dwt
 #SBATCH --partition=dgx2
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:4     
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=6
+#SBATCH --gres=gpu:8     
 #SBATCH --mail-type=end
 #SBATCH --mail-user=xypeng9903@outlook.com
 #SBATCH --output=%j.out
@@ -15,9 +15,8 @@ module load gcc cuda
 
 ./cudaTensorCoreGemm
 
-accelerate launch train.py \
---config configs/train_ffhq_dwt_large.json \
---batch-size 8 \
---grad-accum-steps 4 \
---sample-n 1 \
---name runs/train/ffhq_dwt_large
+srun python train_openai.py \
+    --checkpoint runs/train_openai/version_10/checkpoints/epoch=5-step=1464.ckpt \
+    --batch-size 12 \
+    --accumulate-grad-batches 1 \
+    --num-workers 32
