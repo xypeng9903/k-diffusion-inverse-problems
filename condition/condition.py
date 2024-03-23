@@ -396,7 +396,7 @@ def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
             def _size(self) -> torch.Size:
                 return torch.Size([x0_mean.numel(), x0_mean.numel()])
         
-        mat = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1))
+        mat = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
         mat = mat.reshape(x0_mean.shape)
    
     return mat
@@ -429,7 +429,7 @@ def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
             def _size(self) -> torch.Size:
                 return torch.Size([y.numel(), y.numel()])
 
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
         u = u.reshape(x0_mean.shape) 
         mat = ifft2(FBC * fft2(u)).real
    
@@ -478,7 +478,7 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
             def _size(self) -> torch.Size:
                 return torch.Size([y.numel(), y.numel()])
         
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
         u = u.reshape(x0_mean.shape)
         mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
 
@@ -527,7 +527,7 @@ def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfor
             def _size(self) -> torch.Size:
                 return torch.Size([x0_mean.numel(), x0_mean.numel()])
             
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
         cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
     
     return cond_x0_mean
@@ -562,7 +562,7 @@ def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()
             def _size(self) -> torch.Size:
                 return torch.Size([x0_mean.numel(), x0_mean.numel()])
             
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
         cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape)
     
     return cond_x0_mean
@@ -611,7 +611,7 @@ def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTr
             def _size(self) -> torch.Size:
                 return torch.Size([x0_mean.numel(), x0_mean.numel()])
             
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
         cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
 
     return cond_x0_mean
