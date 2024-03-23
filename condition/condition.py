@@ -2,9 +2,6 @@ import torch
 from torch import nn
 from torch.autograd import grad
 from torch.fft import fft2, ifft2
-from scipy.sparse.linalg import cg, LinearOperator
-import numpy as np
-from warnings import warn
 from abc import abstractmethod
 from functools import partial
 import gpytorch
@@ -381,27 +378,26 @@ def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
         mat =  (mask * y - mask * x0_mean) / (sigma_s.pow(2) + theta0_var) # TODO
     
     else:
-        device = x0_mean.device
-        sigma_s, mask, y, x0_mean, theta0_var = \
-            sigma_s.cpu(), mask.cpu(), y.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
+        b = mask * y - mask * x0_mean
 
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+        class A(gpytorch.LinearOperator):
 
-            def _matvec(self, mat):
-                mat = torch.Tensor(mat).reshape(x0_mean.shape)
+            def _matmul(self, mat):
+                mat = mat.reshape(x0_mean.shape)
                 mat = sigma_s**2 * mat + mask * iot(theta0_var * ot(mat))
-                mat = mat.flatten().detach().cpu().numpy()
+                mat = mat.reshape(-1, 1)
                 return mat
+            
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([x0_mean.numel(), x0_mean.numel()])
         
-        b = (mask * y - mask * x0_mean).flatten().detach().cpu().numpy()
-        mat, info = cg(A(), b, tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        mat = torch.Tensor(mat).reshape(x0_mean.shape).to(device)
+        mat = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1))
+        mat = mat.reshape(x0_mean.shape)
    
     return mat
 
@@ -415,31 +411,27 @@ def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
         mat = ifft2(FBC / (sigma_s.pow(2) + theta0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
     
     else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, y, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), y.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
-
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (y.numel(), y.numel()))
-
-            def _matvec(self, u):
-                u = torch.Tensor(u).reshape(y.shape)
-                u = sigma_s**2 * u + ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(u)).real)))).real
-                u = u.flatten().detach().cpu().numpy()
-                return u
-        
         b = y - ifft2(FB * fft2(x0_mean)).real
-        b = b.flatten().detach().cpu().numpy()
 
-        u, info = cg(A(), b, tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        u = torch.Tensor(u).reshape(y.shape)
+        class A(gpytorch.LinearOperator):
 
-        mat = (ifft2(FBC * fft2(u)).real).to(device)
+            def _matmul(self, u):
+                u = u.reshape(y.shape)
+                u = sigma_s**2 * u + ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(u)).real)))).real
+                u = u.reshape(-1, 1)
+                return u
+            
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([y.numel(), y.numel()])
+
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
+        u = u.reshape(x0_mean.shape) 
+        mat = ifft2(FBC * fft2(u)).real
    
     return mat
 
@@ -468,31 +460,27 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
         mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + theta0_var * invW)).repeat(1, 1, sf, sf)).real
     
     else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, y, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), y.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
-
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (y.numel(), y.numel()))
-
-            def _matvec(self, u):
-                u = torch.Tensor(u).reshape(y.shape)
-                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))), sf)
-                u = u.real.flatten().detach().cpu().numpy()
-                return u
-        
         b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real
-        b = b.flatten().detach().cpu().numpy()
 
-        u, info = cg(A(), b, tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        u = torch.Tensor(u).reshape(y.shape)
+        class A(gpytorch.LinearOperator):
 
-        mat = (ifft2(FBC * fft2(sr.upsample(u, sf))).real).to(device)
+            def _matmul(self, u):
+                u = u.reshape(y.shape)
+                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))), sf)
+                u = u.shape(-1, 1)
+                return u
+            
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([y.numel(), y.numel()])
+        
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
+        u = u.reshape(x0_mean.shape)
+        mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
 
     return mat
 
@@ -521,29 +509,26 @@ def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfor
         cond_x0_mean = (theta0_var * y + sigma_s**2 * x0_mean) / (sigma_s**2 + theta0_var * mask)
     
     else:
-        device = x0_mean.device
-        sigma_s, mask, y, x0_mean, theta0_var = \
-            sigma_s.cpu(), mask.cpu(), y.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
+        b = y / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
 
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
-
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
+        class A(gpytorch.LinearOperator):
+            
+            def _matmul(self, x):
+                x = x.reshape(x0_mean.shape)
                 x = mask * x / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
+                x = x.reshape(-1, 1)
                 return x
             
-        b = y / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device) 
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([x0_mean.numel(), x0_mean.numel()])
+            
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
     
     return cond_x0_mean
 
@@ -559,29 +544,26 @@ def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()
         cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, 1).float()
     
     else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
+        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
 
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+        class A(gpytorch.LinearOperator):
 
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
+            def _matmul(self, x):
+                x = x.reshape(x0_mean.shape)
                 x = ifft2(F2B * fft2(x)).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
+                x = x.reshape(-1, 1)
                 return x
             
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device) 
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([x0_mean.numel(), x0_mean.numel()])
+            
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape)
     
     return cond_x0_mean
 
@@ -611,28 +593,25 @@ def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTr
         cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, sf).float()
 
     else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), x0_mean.cpu(), theta0_var.cpu()
         ot = ortho_tf
         iot = ortho_tf.inv
+        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
 
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
+        class A(gpytorch.LinearOperator):
 
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
+            def _matmul(self, x):
+                x = x.reshape(x0_mean.shape)
                 x = ifft2(FBC * fft2(sr.upsample(sr.downsample(ifft2(FB * fft2(x)), sf), sf))).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
+                x = x.reshape(-1, 1)
                 return x
             
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device)
+            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
+                return self
+            
+            def _size(self) -> torch.Size:
+                return torch.Size([x0_mean.numel(), x0_mean.numel()])
+            
+        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
+        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
 
     return cond_x0_mean
