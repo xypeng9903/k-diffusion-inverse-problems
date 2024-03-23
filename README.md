@@ -136,7 +136,7 @@ bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
 ### Discrete Wavelet Transform
 We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. Example model outputs (bottom) are given as follows:
 
-![DWT Variance](assests/dwt.png ```Example model outputs```)
+![DWT Variance](assests/dwt.png "Example model outputs")
 
 To test the performance with DWT variance, please download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to ```../model_zoo```, and test with
 
