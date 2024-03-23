@@ -429,7 +429,7 @@ def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
             def _size(self) -> torch.Size:
                 return torch.Size([y.numel(), y.numel()])
 
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
         u = u.reshape(x0_mean.shape) 
         mat = ifft2(FBC * fft2(u)).real
    
@@ -478,7 +478,7 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
             def _size(self) -> torch.Size:
                 return torch.Size([y.numel(), y.numel()])
         
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
+        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1))
         u = u.reshape(x0_mean.shape)
         mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
 
