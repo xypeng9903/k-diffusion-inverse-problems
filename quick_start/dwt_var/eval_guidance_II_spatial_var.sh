@@ -1,7 +1,7 @@
 MLE_SIGMA_THRES="$1"
 DATASET="ffhq"
 CONFIG="configs/test_ffhq_dwt.json"
-CHECKPOINT="../model_zoo/ffhq_dwt.pth"
+CHECKPOINT="../model_zoo/ffhq_dwt.ckpt"
 
 
 python sample_condition_openai_v2.py \
