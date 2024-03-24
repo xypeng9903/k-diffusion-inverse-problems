@@ -469,7 +469,7 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
             def _matmul(self, u):
                 u = u.reshape(y.shape)
                 u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))), sf)
-                u = u.shape(-1, 1)
+                u = u.reshape(-1, 1)
                 return u
             
             def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
