@@ -468,7 +468,7 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
 
             def _matmul(self, u):
                 u = u.reshape(y.shape)
-                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))), sf)
+                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))).real, sf)
                 u = u.reshape(-1, 1)
                 return u
             
@@ -479,7 +479,7 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
                 return torch.Size([y.numel(), y.numel()])
         
         u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
-        u = u.reshape(x0_mean.shape)
+        u = u.reshape(y.shape)
         mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
 
     return mat
