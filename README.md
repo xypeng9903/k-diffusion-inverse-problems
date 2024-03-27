@@ -107,16 +107,16 @@ bash quick_start/eval_guidance_II.sh ffhq
 
 For reproducing results on FFHQ dataset in Table 4, run
 ```bash
-bash quick_start/eval_complete_dps.sh ffhq
-bash quick_start/eval_complete_dps+mle.sh ffhq analytic
-bash quick_start/eval_complete_dps+mle.sh ffhq convert
+bash quick_start/eval_complete_pgdm.sh ffhq
+bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
+bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
 ```
 
 For reproducing results on FFHQ dataset in Figure 4, run
 ```bash
-bash quick_start/eval_complete_pgdm.sh ffhq
-bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
-bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
+bash quick_start/eval_complete_dps.sh ffhq
+bash quick_start/eval_complete_dps+mle.sh ffhq analytic
+bash quick_start/eval_complete_dps+mle.sh ffhq convert
 ```
 
 ## Additional Results with Latent Variance
