@@ -103,7 +103,7 @@ def main():
     p.add_argument('--lam', type=float, default=None)
     p.add_argument('--zeta', type=float, default=None)
     p.add_argument('--num-hutchinson-samples', type=int, default=None)
-    p.add_argument('--gamma', type=float, default=None)
+    p.add_argument('--eta', type=float, default=None)
 
 
 
@@ -183,7 +183,7 @@ def main():
                 recon_mse=recon_mse,
                 lambda_=args.lam,
                 zeta=args.zeta,
-                gamma=args.gamma,
+                eta=args.eta,
                 num_hutchinson_samples=args.num_hutchinson_samples,
                 mle_sigma_thres=args.mle_sigma_thres,
                 device=device

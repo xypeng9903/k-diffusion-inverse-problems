@@ -49,7 +49,7 @@ class ConditionDenoiser(nn.Module):
         device='cpu',
         zeta=None,
         lambda_=None,
-        gamma=None,
+        eta=None,
         num_hutchinson_samples=None,
         mle_sigma_thres=0.2,
         ortho_tf_type=None
@@ -60,7 +60,7 @@ class ConditionDenoiser(nn.Module):
         self.guidance = guidance
         self.zeta = zeta
         self.lambda_ = lambda_
-        self.gamma = gamma
+        self.eta = eta
         self.num_hutchinson_samples = num_hutchinson_samples
         self.device = device
         self.mle_sigma_thres = mle_sigma_thres
@@ -186,8 +186,8 @@ class ConditionDenoiser(nn.Module):
         return hat_x0
     
     def _stsl_guidance_impl(self, x, sigma):
-        assert self.zeta is not None and self.gamma is not None and self.num_hutchinson_samples is not None, \
-            "zeta, gamma, and num_hutchinson_samples must be specified for STSL guidance"
+        assert self.zeta is not None and self.eta is not None and self.num_hutchinson_samples is not None, \
+            "zeta, eta, and num_hutchinson_samples must be specified for STSL guidance"
         x = x.requires_grad_()
         
         # first order loss
@@ -202,7 +202,7 @@ class ConditionDenoiser(nn.Module):
             increase_x0_mean = self.uncond_pred(x + eps, sigma)[0]
             second_order_loss += -((increase_x0_mean - x0_mean) * eps).sum() * sigma.pow(2)
         second_order_loss /= self.num_hutchinson_samples
-        loss = self.zeta * first_order_loss + self.gamma * second_order_loss
+        loss = self.zeta * first_order_loss + (self.eta / x.numel()) * second_order_loss
         
         # approximate E[x0|xt, y]
         likelihood_score = grad(loss, x)[0]
