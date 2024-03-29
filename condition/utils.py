@@ -108,7 +108,6 @@ class DiscreteWaveletTransform(OrthoLinearFunction):
 
     def __init__(self, level=3, wavelet='haar') -> None:
         super().__init__()
-        self.slice = slice
         self.level = level
         self.wavelet = wavelet
 

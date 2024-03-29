@@ -13,6 +13,7 @@ from gpytorch.distributions import MultivariateNormal
 import condition.diffpir_utils.utils_sisr as sr
 from .utils import OrthoTransform, LazyOTCovariance
 from k_diffusion.external import OpenAIDenoiser, OpenAIDenoiserV2
+from k_diffusion.models import ImageDenoiserModelV2
 from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 
 
@@ -48,6 +49,8 @@ class ConditionDenoiser(nn.Module):
         device='cpu',
         zeta=None,
         lambda_=None,
+        eta=None,
+        num_hutchinson_samples=None,
         mle_sigma_thres=0.2,
         ortho_tf_type=None
     ):
@@ -57,6 +60,8 @@ class ConditionDenoiser(nn.Module):
         self.guidance = guidance
         self.zeta = zeta
         self.lambda_ = lambda_
+        self.eta = eta
+        self.num_hutchinson_samples = num_hutchinson_samples
         self.device = device
         self.mle_sigma_thres = mle_sigma_thres
         self.ortho_tf_type = ortho_tf_type
@@ -102,6 +107,9 @@ class ConditionDenoiser(nn.Module):
         elif self.guidance == "diffpir":
             hat_x0 = self._diffpir_guidance_impl(x, sigma)
 
+        elif self.guidance == "stsl":
+            hat_x0 = self._stsl_guidance_impl(x, sigma)
+
         elif self.guidance == "dps+mle":
             if sigma < self.mle_sigma_thres:
                 hat_x0 = self._type_I_guidance_impl(x, sigma)
@@ -119,7 +127,13 @@ class ConditionDenoiser(nn.Module):
                 hat_x0 = self._type_II_guidance_impl(x, sigma)
             else:
                 hat_x0 = self._diffpir_guidance_impl(x, sigma)
-                     
+
+        elif self.guidance == "stsl+mle":
+            if sigma < self.mle_sigma_thres:
+                hat_x0 = self._type_I_guidance_impl(x, sigma)
+            else:
+                hat_x0 = self._stsl_guidance_impl(x, sigma)   
+
         else:
             raise ValueError(f"Invalid guidance type: '{self.guidance}'.")
             
@@ -133,9 +147,9 @@ class ConditionDenoiser(nn.Module):
         return hat_x0
 
     def _dps_guidance_impl(self, x, sigma):
-        assert self.zeta is not None
+        assert self.zeta is not None, "zeta must be specified for DPS guidance"
         x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        x0_mean = self.uncond_pred(x, sigma)[0]
         difference = self.y - self.operator.forward(x0_mean, noiseless=True)
         norm = torch.linalg.norm(difference)
         likelihood_score = -grad(norm, x)[0] * self.zeta
@@ -144,15 +158,15 @@ class ConditionDenoiser(nn.Module):
 
     def _pgdm_guidance_impl(self, x, sigma):
         x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        x0_mean = self.uncond_pred(x, sigma)[0]
         mat = self.mat_solver(self.operator, self.y, x0_mean, sigma.pow(2) / (1 + sigma.pow(2)))
         likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0] * (sigma.pow(2) / (1 + sigma.pow(2)))
         hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
         return hat_x0
 
     def _diffpir_guidance_impl(self, x, sigma):
-        assert self.lambda_ is not None
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        assert self.lambda_ is not None, "lambda_ must be specified for DiffPIR guidance"
+        x0_mean = self.uncond_pred(x, sigma)[0]
         hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, sigma.pow(2) / self.lambda_)
         return hat_x0
 
@@ -170,6 +184,31 @@ class ConditionDenoiser(nn.Module):
         hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, 
                                       x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
         return hat_x0
+    
+    def _stsl_guidance_impl(self, x, sigma):
+        assert self.zeta is not None and self.eta is not None and self.num_hutchinson_samples is not None, \
+            "zeta, eta, and num_hutchinson_samples must be specified for STSL guidance"
+        x = x.requires_grad_()
+        
+        # first order loss
+        x0_mean = self.uncond_pred(x, sigma)[0]
+        difference = self.y - self.operator.forward(x0_mean, noiseless=True)
+        first_order_loss = -torch.linalg.norm(difference)
+        
+        # second order loss
+        second_order_loss = 0
+        for _ in range(self.num_hutchinson_samples):
+            eps = torch.randn_like(x)
+            increase_x0_mean = self.uncond_pred(x + eps, sigma)[0]
+            second_order_loss += -((increase_x0_mean - x0_mean) * eps).sum() * sigma.pow(2)
+        second_order_loss /= self.num_hutchinson_samples
+        loss = self.zeta * first_order_loss + (self.eta / x.numel()) * second_order_loss
+        
+        # approximate E[x0|xt, y]
+        likelihood_score = grad(loss, x)[0]
+        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
+        
+        return hat_x0
         
 
 class ConditionOpenAIDenoiser(ConditionDenoiser):
@@ -178,37 +217,19 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
         self, 
         denoiser, 
         diffusion: GaussianDiffusion, 
-        operator, 
-        measurement, 
-        guidance='I',
-        zeta=1,
-        x0_cov_type='convert',
-        mle_sigma_thres=0.2,
-        lambda_=None,
-        recon_mse=None, 
-        device='cpu'
+        x0_cov_type,
+        recon_mse,
+        **kwargs
     ):
-        
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=None
-        )
-
+        super().__init__(**kwargs)
         self.denoiser = denoiser
         self.diffusion = diffusion
+        self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=self.device)
         self.x0_cov_type = x0_cov_type
-        self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=device)
-
         self.recon_mse = recon_mse
         if recon_mse is not None:
             for key in self.recon_mse.keys():
-                self.recon_mse[key] = self.recon_mse[key].to(device)
+                self.recon_mse[key] = self.recon_mse[key].to(self.device)
 
     def uncond_pred(self, x, sigma):
         c_out, c_in = self.openai_denoiser.get_scalings(sigma)
@@ -270,32 +291,13 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
 
 class ConditionOpenAIDenoiserV2(ConditionDenoiser):
 
-    def __init__(
-        self, 
-        denoiser: OpenAIDenoiserV2,
-        operator, 
-        measurement, 
-        guidance, 
-        device='cpu', 
-        zeta=None, 
-        lambda_=None, 
-        mle_sigma_thres=1, 
-        ortho_tf_type=None
-    ):
-
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=ortho_tf_type
-        )
+    def __init__(self, denoiser: OpenAIDenoiserV2, **kwargs):
+        super().__init__(**kwargs)
         self.denoiser = denoiser
+        ortho_tf_type = kwargs.get('ortho_tf_type', None)
         if ortho_tf_type is not None:
-            assert ortho_tf_type == denoiser.ortho_tf_type
+            assert ortho_tf_type == denoiser.ortho_tf_type, \
+                "ortho_tf_type must match the one used in the denoiser"
 
     def uncond_pred(self, x, sigma):
         c_out, c_in = self.denoiser.get_scalings(sigma)
@@ -315,32 +317,13 @@ class ConditionOpenAIDenoiserV2(ConditionDenoiser):
 
 class ConditionImageDenoiserV2(ConditionDenoiser):
 
-    def __init__(
-        self, 
-        denoiser: OpenAIDenoiserV2,
-        operator, 
-        measurement, 
-        guidance, 
-        device='cpu', 
-        zeta=None, 
-        lambda_=None, 
-        mle_sigma_thres=1, 
-        ortho_tf_type=None
-    ):
-
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=ortho_tf_type
-        )
+    def __init__(self, denoiser: ImageDenoiserModelV2, **kwargs):
+        super().__init__(**kwargs)
         self.denoiser = denoiser
+        ortho_tf_type = kwargs.get('ortho_tf_type', None)
         if ortho_tf_type is not None:
-            assert ortho_tf_type == denoiser.ortho_tf_type
+            assert ortho_tf_type == denoiser.ortho_tf_type, \
+                "ortho_tf_type must match the one used in the denoiser"
 
     def uncond_pred(self, x, sigma):
         c_skip, c_out, c_in = self.denoiser.get_scalings(sigma)
