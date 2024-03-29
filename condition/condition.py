@@ -128,7 +128,7 @@ class ConditionDenoiser(nn.Module):
             else:
                 hat_x0 = self._diffpir_guidance_impl(x, sigma)
 
-        elif self.guidance == "stsl":
+        elif self.guidance == "stsl+mle":
             if sigma < self.mle_sigma_thres:
                 hat_x0 = self._type_I_guidance_impl(x, sigma)
             else:
