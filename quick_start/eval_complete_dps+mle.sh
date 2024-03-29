@@ -2,10 +2,10 @@ DATASET="$1"
 COV="$2"
 
 if [ "${DATASET}" = "ffhq" ]; then
-    CONFIG="configs/config_256x256_ffhq.json"
+    CONFIG="configs/test_ffhq.json"
     CHECKPOINT="../model_zoo/diffusion_ffhq_10m.pt"
 elif [ "${DATASET}" = "imagenet" ]; then
-    CONFIG="configs/config_256x256_imagenet.json"
+    CONFIG="configs/test_imagenet.json"
     CHECKPOINT="../model_zoo/256x256_diffusion_uncond.pt"
 else
     echo "Invalid dataset."
