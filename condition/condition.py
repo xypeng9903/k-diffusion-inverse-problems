@@ -149,7 +149,7 @@ class ConditionDenoiser(nn.Module):
     def _dps_guidance_impl(self, x, sigma):
         assert self.zeta is not None, "zeta must be specified for DPS guidance"
         x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        x0_mean = self.uncond_pred(x, sigma)[0]
         difference = self.y - self.operator.forward(x0_mean, noiseless=True)
         norm = torch.linalg.norm(difference)
         likelihood_score = -grad(norm, x)[0] * self.zeta
@@ -158,7 +158,7 @@ class ConditionDenoiser(nn.Module):
 
     def _pgdm_guidance_impl(self, x, sigma):
         x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        x0_mean = self.uncond_pred(x, sigma)[0]
         mat = self.mat_solver(self.operator, self.y, x0_mean, sigma.pow(2) / (1 + sigma.pow(2)))
         likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0] * (sigma.pow(2) / (1 + sigma.pow(2)))
         hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
@@ -166,7 +166,7 @@ class ConditionDenoiser(nn.Module):
 
     def _diffpir_guidance_impl(self, x, sigma):
         assert self.lambda_ is not None, "lambda_ must be specified for DiffPIR guidance"
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        x0_mean = self.uncond_pred(x, sigma)[0]
         hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, sigma.pow(2) / self.lambda_)
         return hat_x0
 
