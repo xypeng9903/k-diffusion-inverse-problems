@@ -132,7 +132,8 @@ class ConditionDenoiser(nn.Module):
             if sigma < self.mle_sigma_thres:
                 hat_x0 = self._type_I_guidance_impl(x, sigma)
             else:
-                hat_x0 = self._stsl_guidance_impl(x, sigma)     
+                hat_x0 = self._stsl_guidance_impl(x, sigma)   
+
         else:
             raise ValueError(f"Invalid guidance type: '{self.guidance}'.")
             
@@ -188,17 +189,25 @@ class ConditionDenoiser(nn.Module):
         assert self.zeta is not None and self.gamma is not None and self.num_hutchinson_samples is not None, \
             "zeta, gamma, and num_hutchinson_samples must be specified for STSL guidance"
         x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
+        
+        # first order loss
+        x0_mean = self.uncond_pred(x, sigma)[0]
         difference = self.y - self.operator.forward(x0_mean, noiseless=True)
         first_order_loss = -torch.linalg.norm(difference)
+        
+        # second order loss
         second_order_loss = 0
         for _ in range(self.num_hutchinson_samples):
             eps = torch.randn_like(x)
-            second_order_loss += -(grad((eps * x0_mean).sum(), x, retain_graph=True)[0] * eps).sum() * sigma**2
+            increase_x0_mean = self.uncond_pred(x + eps, sigma)[0]
+            second_order_loss += -((increase_x0_mean - x0_mean) * eps).sum() * sigma.pow(2)
         second_order_loss /= self.num_hutchinson_samples
         loss = self.zeta * first_order_loss + self.gamma * second_order_loss
+        
+        # approximate E[x0|xt, y]
         likelihood_score = grad(loss, x)[0]
         hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
+        
         return hat_x0
         
 

@@ -10,7 +10,7 @@ else
     echo "Invalid dataset."
 fi
 
-for GAMMA in 0.1
+for GAMMA in 0 1e-2 1e-1 1
 do
     python sample_condition_openai.py \
     --guidance stsl \
