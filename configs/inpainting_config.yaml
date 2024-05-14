@@ -1,8 +1,4 @@
 name: inpainting
 sigma_s: 0.05
-mask_opt:
-  mask_type: random # box, random
-  # mask_len_range: !!python/tuple [128, 129]  # for box
-  mask_prob_range: !!python/tuple [0.5, 0.5]  # for random
-  image_size: 256
+mask: 'condition/masks/random_mask.png'
 

@@ -63,7 +63,7 @@ def downsample(x, sf=3):
 
 
 def data_solution(x, FB, FBC, F2B, FBFy, alpha, sf):
-    alpha = alpha.clip(min=1e-2)
+    # alpha = alpha.clip(min=1e-2)
     FR = FBFy + torch.fft.fftn(alpha*x, dim=(-2,-1))
     x1 = FB.mul(FR)
     FBR = torch.mean(splits(x1, sf), dim=-1, keepdim=False)

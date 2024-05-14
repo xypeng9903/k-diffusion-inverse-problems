@@ -1,37 +1,21 @@
+import warnings
 import torch
 from torch import nn
-from torch.autograd import grad
 from torch.fft import fft2, ifft2
 from abc import abstractmethod
-from functools import partial
-import gpytorch
-from gpytorch.distributions import MultivariateNormal
+from condition.diffpir_utils.utils_sisr import pre_calculate
+from linear_operator.utils import linear_cg
 
 import condition.diffpir_utils.utils_sisr as sr
-from .utils import OrthoTransform, LazyOTCovariance
-from k_diffusion.external import OpenAIDenoiser, OpenAIDenoiserV2
-from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
-
-
-class LazyLikelihoodCovariance(gpytorch.LinearOperator):
-
-    def _matmul(self: gpytorch.LinearOperator, rhs: torch.Tensor) -> torch.Tensor:
-        x0_cov, operator = self._kwargs['x0_cov'], self._kwargs['operator']
-        sigma_s = operator.sigma_s
-        A = partial(operator.forward, noiseless=True, flatten=True)
-        AT = partial(operator.transpose, flatten=True)
-        
-        rhs = rhs.permute(1, 0)
-        rhs = sigma_s**2 * rhs + A(x0_cov(AT(rhs)))[1]
-        rhs = rhs.permute(1, 0)
-
-        return rhs
-    
-    def _size(self) -> torch.Size:
-        return torch.Size([self._args[0].numel(), self._args[0].numel()])
-    
-    def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-        return self
+from .measurements import convert_to_linear_op
+from k_diffusion.external import OpenAIDenoiserV2
+from .covariance import (
+    IsotropicCovariance,
+    DiagonalCovariance,
+    TweedieCovariance,
+    DiscreteWaveletTransform,
+    LikelihoodCovariance
+)
 
 
 class ConditionDenoiser(nn.Module):
@@ -40,578 +24,195 @@ class ConditionDenoiser(nn.Module):
     def __init__(
         self,
         operator, 
-        measurement, 
-        guidance,
-        device='cpu',
-        zeta=None,
-        lambda_=None,
-        mle_sigma_thres=0.2,
-        ortho_tf_type=None
+        measurement,
+        device='cpu'
     ):
         super().__init__()
         self.operator = operator
-        self.y, self.y_flatten = measurement
-        self.guidance = guidance
-        self.zeta = zeta
-        self.lambda_ = lambda_
+        self.measurement = measurement
         self.device = device
-        self.mle_sigma_thres = mle_sigma_thres
-        self.ortho_tf_type = ortho_tf_type
-        self.ortho_tf = OrthoTransform(ortho_tf_type)
-    
-        self.mat_solver = __MAT_SOLVER__[operator.name]
-        self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
     @abstractmethod
     def uncond_pred(self, x, sigma):
         raise NotImplementedError
-
-    def loglikelihood(self, x0_mean, x0_var, theta0_var):
-        x0_cov = LazyOTCovariance(self.ortho_tf, x0_var if self.ortho_tf_type is None else theta0_var)        
-        mean = self.operator.forward(x0_mean, noiseless=True, flatten=True)[1][0]
-        cov = LazyLikelihoodCovariance(self.y_flatten, x0_cov=x0_cov, operator=self.operator)
-        return MultivariateNormal(mean, cov).log_prob(self.y_flatten[0])
+    
+    @abstractmethod
+    def covar_schedule(self, tweedie_covar, learned_covar, sigma):
+        raise NotImplementedError
 
     def forward(self, x, sigma):
         assert x.shape[0] == 1
-
-        if self.guidance == "uncond":
-            hat_x0 = self.uncond_pred(x, sigma)[0]
-
-        elif self.guidance == "autoI":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._auto_type_I_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._type_I_guidance_impl(x, sigma)
-
-        elif self.guidance == "I":
-            hat_x0 = self._type_I_guidance_impl(x, sigma)
-
-        elif self.guidance == "II":
-            hat_x0 = self._type_II_guidance_impl(x, sigma)
-
-        elif self.guidance == "dps":
-            hat_x0 = self._dps_guidance_impl(x, sigma)
-
-        elif self.guidance == "pgdm":
-            hat_x0 = self._pgdm_guidance_impl(x, sigma) 
-
-        elif self.guidance == "diffpir":
-            hat_x0 = self._diffpir_guidance_impl(x, sigma)
-
-        elif self.guidance == "dps+mle":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._type_I_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._dps_guidance_impl(x, sigma)
-
-        elif self.guidance == "pgdm+mle":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._type_I_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._pgdm_guidance_impl(x, sigma)
-
-        elif self.guidance == "diffpir+mle":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._type_II_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._diffpir_guidance_impl(x, sigma)
-                     
-        else:
-            raise ValueError(f"Invalid guidance type: '{self.guidance}'.")
-            
+        x0_mean, tweedie_covar, learned_covar = self.uncond_pred(x, sigma)
+        covar1, covar2 = self.covar_schedule(tweedie_covar, learned_covar, sigma)
+        mat = MatSolver(self.operator, self.measurement, x0_mean, covar2, sigma).solve()
+        correction = (covar1 @ mat).reshape(x0_mean.shape)
+        hat_x0 = x0_mean + correction
         return hat_x0.clip(-1, 1).detach()
     
-    def _auto_type_I_guidance_impl(self, x, sigma):
-        x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        likelihood_score = grad(self.loglikelihood(x0_mean, x0_var, theta0_var), x)[0]
-        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
-        return hat_x0
-
-    def _dps_guidance_impl(self, x, sigma):
-        assert self.zeta is not None
-        x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        difference = self.y - self.operator.forward(x0_mean, noiseless=True)
-        norm = torch.linalg.norm(difference)
-        likelihood_score = -grad(norm, x)[0] * self.zeta
-        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
-        return hat_x0
-
-    def _pgdm_guidance_impl(self, x, sigma):
-        x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        mat = self.mat_solver(self.operator, self.y, x0_mean, sigma.pow(2) / (1 + sigma.pow(2)))
-        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0] * (sigma.pow(2) / (1 + sigma.pow(2)))
-        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
-        return hat_x0
-
-    def _diffpir_guidance_impl(self, x, sigma):
-        assert self.lambda_ is not None
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, sigma.pow(2) / self.lambda_)
-        return hat_x0
-
-    def _type_I_guidance_impl(self, x, sigma):
-        x = x.requires_grad_()
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        mat = self.mat_solver(self.operator, self.y, x0_mean, 
-                              x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
-        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0]
-        hat_x0 = x0_mean + sigma.pow(2) * likelihood_score
-        return hat_x0
-    
-    def _type_II_guidance_impl(self, x, sigma):
-        x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, 
-                                      x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
-        return hat_x0
-        
-
-class ConditionOpenAIDenoiser(ConditionDenoiser):
-    
-    def __init__(
-        self, 
-        denoiser, 
-        diffusion: GaussianDiffusion, 
-        operator, 
-        measurement, 
-        guidance='I',
-        zeta=1,
-        x0_cov_type='convert',
-        mle_sigma_thres=0.2,
-        lambda_=None,
-        recon_mse=None, 
-        device='cpu'
-    ):
-        
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=None
-        )
-
-        self.denoiser = denoiser
-        self.diffusion = diffusion
-        self.x0_cov_type = x0_cov_type
-        self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=device)
-
-        self.recon_mse = recon_mse
-        if recon_mse is not None:
-            for key in self.recon_mse.keys():
-                self.recon_mse[key] = self.recon_mse[key].to(device)
-
-    def uncond_pred(self, x, sigma):
-        c_out, c_in = self.openai_denoiser.get_scalings(sigma)
-        t = self.openai_denoiser.sigma_to_t(sigma).long()
-        D = self.diffusion
-
-        if self.x0_cov_type == 'tmpd':
-            x = x.requires_grad_()
-        xprev_pred = D.p_mean_variance(self.denoiser, x * c_in, t)
-        x0_mean = xprev_pred['pred_xstart']
-
-        if self.x0_cov_type == 'convert':
-            if sigma < self.mle_sigma_thres:
-                x0_var = (
-                    (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
-                    / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
-                ).clip(min=1e-6) # Eq. (22)       
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        elif self.x0_cov_type == 'analytic':
-            assert self.recon_mse is not None
-            if sigma < self.mle_sigma_thres:
-                idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
-                x0_var = self.recon_mse['mse_list'][idx]
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        elif self.x0_cov_type == 'pgdm':
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        elif self.x0_cov_type == 'dps':
-            x0_var = torch.zeros(1).to(self.device) 
-
-        elif self.x0_cov_type == 'diffpir':
-            assert self.lambda_ is not None
-            x0_var = sigma.pow(2) / self.lambda_ 
-
-        elif self.x0_cov_type == 'tmpd':      
-            if sigma < self.mle_sigma_thres:
-                x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)      
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
-
-        else:
-            raise ValueError('Invalid posterior covariance type.')
-                        
-        return x0_mean, x0_var, x0_var
-
 
 class ConditionOpenAIDenoiserV2(ConditionDenoiser):
 
     def __init__(
         self, 
         denoiser: OpenAIDenoiserV2,
-        operator, 
-        measurement, 
-        guidance, 
-        device='cpu', 
-        zeta=None, 
-        lambda_=None, 
-        mle_sigma_thres=1, 
-        ortho_tf_type=None
+        guidance: str = "I-1",
+        **kwargs
     ):
+        r"""
+        Args: covar_schedule
+        """
+        super().__init__(**kwargs)
+        self.denoiser = denoiser.requires_grad_(False)
+        self.guidance = guidance
+        self.ortho_tf_type = denoiser.ortho_tf_type
 
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=ortho_tf_type
-        )
-        self.denoiser = denoiser
-        if ortho_tf_type is not None:
-            assert ortho_tf_type == denoiser.ortho_tf_type
-
-    def uncond_pred(self, x, sigma):
+    def uncond_pred(self, x: torch.Tensor, sigma):
         c_out, c_in = self.denoiser.get_scalings(sigma)
         model_output, logvar, logvar_ot = self.denoiser(x, sigma, return_variance=True)
-
         x0_mean = model_output * c_out + x
-
-        if sigma < self.mle_sigma_thres:
-            x0_var = logvar.exp() * c_out.pow(2)
-            theta0_var = logvar_ot.exp() * c_out.pow(2)
-        else:
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2))
-            theta0_var = sigma.pow(2) / (1 + sigma.pow(2))
-
-        return x0_mean, x0_var, theta0_var
+        predict_covar = self._get_predict_covar(logvar_ot.exp() * c_out**2)
+        tweedie_covar = TweedieCovariance(x, self.denoiser, sigma)
+        return x0_mean, tweedie_covar, predict_covar
     
-
-class ConditionImageDenoiserV2(ConditionDenoiser):
-
+    def covar_schedule(self, tweedie_covar, predict_covar, sigma):
+        pgdm_covar = IsotropicCovariance(sigma.pow(2) / (1 + sigma.pow(2)), 3*256*256)
+        guidance = self.guidance.split('-')
+        if guidance[0] == 'I':
+            thres = float(guidance[1])
+            covar1 = tweedie_covar
+            covar2 = predict_covar if sigma < thres else pgdm_covar
+        elif guidance[0] == 'II':
+            thres = float(guidance[1])
+            covar = predict_covar if sigma < thres else pgdm_covar
+            covar1 = covar
+            covar2 = covar
+        elif guidance[0] == 'tweedie':
+            thres1, thres2, thres = float(guidance[1]), float(guidance[2]), float(guidance[3])
+            # covar1
+            if sigma < thres1:
+                covar1 = tweedie_covar
+            else:
+                covar1 = predict_covar
+            # covar2
+            if sigma < thres2:
+                covar2 = tweedie_covar
+            elif sigma < thres:
+                covar2 = predict_covar
+            else:
+                covar2 = pgdm_covar
+        else:
+            raise NotImplementedError
+        return covar1, covar2
+    
+    def _get_predict_covar(self, variance):
+        PsiT = DiscreteWaveletTransform(variance.shape[1:])
+        Psi = PsiT.transpose(-2, -1)
+        diag = DiagonalCovariance(variance.flatten())
+        return Psi @ diag @ PsiT
+    
+    
+#------------------------------
+# Implementation of mat solver
+#------------------------------
+    
+class MatSolver:
+    
     def __init__(
-        self, 
-        denoiser: OpenAIDenoiserV2,
-        operator, 
-        measurement, 
-        guidance, 
-        device='cpu', 
-        zeta=None, 
-        lambda_=None, 
-        mle_sigma_thres=1, 
-        ortho_tf_type=None
-    ):
-
-        super().__init__(
-            operator=operator, 
-            measurement=measurement, 
-            guidance=guidance,
-            device=device,
-            zeta=zeta,
-            lambda_=lambda_,
-            mle_sigma_thres=mle_sigma_thres,
-            ortho_tf_type=ortho_tf_type
-        )
-        self.denoiser = denoiser
-        if ortho_tf_type is not None:
-            assert ortho_tf_type == denoiser.ortho_tf_type
-
-    def uncond_pred(self, x, sigma):
-        c_skip, c_out, c_in = self.denoiser.get_scalings(sigma)
-        model_output, logvar, logvar_ot = self.denoiser(x, sigma, return_variance=True)
-
-        x0_mean = model_output * c_out + x * c_skip
-
-        if sigma < self.mle_sigma_thres:
-            x0_var = logvar.exp() * c_out.pow(2)
-            theta0_var = logvar_ot.exp() * c_out.pow(2)
+            self, 
+            operator, 
+            measurement, 
+            x0_mean, 
+            x0_covar, 
+            sigma
+        ):
+        y, y_flatten = measurement
+        self.saved = [operator, y, y_flatten, x0_mean, x0_covar, sigma]
+        self.device = x0_mean.device
+        
+    def solve(self, mode='auto', **kwargs):
+        x0_covar_type = type(self.saved[4])
+        if mode == 'auto':
+            mode = 'closed_form' if x0_covar_type in [IsotropicCovariance] else 'cg'
+        
+        if mode == 'closed_form':
+            return self._closed_form(**kwargs)
+        elif mode == 'cg':
+            u = self._cg(**kwargs)
+        elif mode == 'adam':
+            u = self._adam(**kwargs)
         else:
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2))
-            theta0_var = sigma.pow(2) / (1 + sigma.pow(2))
-
-        return x0_mean, x0_var, theta0_var
-
-
-#----------------------------------------------------------------
-# Implementation of mat solver (computing v) for type I guidance
-#----------------------------------------------------------------
-
-__MAT_SOLVER__ = {}
-
-
-def register_mat_solver(name):
-    def wrapper(func):
-        __MAT_SOLVER__[name] = func
-        return func
-    return wrapper
-
-
-@register_mat_solver('inpainting')
-@torch.no_grad()
-def inpainting_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    mask = operator.mask
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    if theta0_var.numel() == 1:
-        mat =  (mask * y - mask * x0_mean) / (sigma_s.pow(2) + theta0_var) # TODO
-    
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = mask * y - mask * x0_mean
-
-        class A(gpytorch.LinearOperator):
-
-            def _matmul(self, mat):
-                mat = mat.reshape(x0_mean.shape)
-                mat = sigma_s**2 * mat + mask * iot(theta0_var * ot(mat))
-                mat = mat.reshape(-1, 1)
-                return mat
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([x0_mean.numel(), x0_mean.numel()])
+            raise NotImplementedError
         
-        mat = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
-        mat = mat.reshape(x0_mean.shape)
-   
-    return mat
-
-
-@torch.no_grad()
-def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    FB, FBC, F2B, FBFy = operator.pre_calculated
-
-    if theta0_var.numel() == 1:
-        mat = ifft2(FBC / (sigma_s.pow(2) + theta0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
+        operator = self.saved[0]
+        A, AT, sigma_s = convert_to_linear_op(operator)
+        mat = AT @ u
+        return mat
     
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = y - ifft2(FB * fft2(x0_mean)).real
-
-        class A(gpytorch.LinearOperator):
-
-            def _matmul(self, u):
-                u = u.reshape(y.shape)
-                u = sigma_s**2 * u + ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(u)).real)))).real
-                u = u.reshape(-1, 1)
-                return u
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([y.numel(), y.numel()])
-
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
-        u = u.reshape(x0_mean.shape) 
-        mat = ifft2(FBC * fft2(u)).real
-   
-    return mat
-
-
-@register_mat_solver('gaussian_blur')
-@torch.no_grad()
-def gaussian_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_mat_solver('motion_blur')
-@torch.no_grad()
-def motion_blur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_mat_solver('super_resolution')
-@torch.no_grad()
-def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001).clip(min=1e-2)
-    sf = operator.scale_factor
-    FB, FBC, F2B, FBFy = operator.pre_calculated
+    def _cg(self, **kwargs):
+        operator, y, y_flatten, x0_mean, x0_covar, sigma = self.saved
+        A, AT, sigma_s = convert_to_linear_op(operator)
+        y_flatten, x0_mean = y_flatten.reshape(-1, 1), x0_mean.reshape(-1, 1)
+        likelihood_covar = LikelihoodCovariance(y_flatten, operator, x0_covar)
+        u = linear_cg(likelihood_covar.matmul, y_flatten - A @ x0_mean, **kwargs)
+        return u
     
-    if theta0_var.numel() == 1:
-        invW = torch.mean(sr.splits(F2B, sf), dim=-1, keepdim=False)
-        mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + theta0_var * invW)).repeat(1, 1, sf, sf)).real
+    @torch.enable_grad()
+    def _adam(self, **kwargs):
+        operator, y, y_flatten, x0_mean, x0_covar, sigma = self.saved
+        A, AT, sigma_s = convert_to_linear_op(operator)
+        y_flatten, x0_mean = y_flatten.reshape(-1, 1), x0_mean.reshape(-1, 1)
+        likelihood_covar = LikelihoodCovariance(y_flatten, operator, x0_covar)
+                
+        u = torch.zeros_like(y_flatten).requires_grad_()
+        optimizer = torch.optim.Adam([u], lr=1)
+
+        # optimizatin loop
+        tol = kwargs.get('tol', 1e-3)
+        max_iter = kwargs.get('max_iter', 300)
+        iteration = 0
+        rhs = y_flatten - A @ x0_mean
+        rhs_norm = rhs.norm().detach()
+        while True:
+            loss = (u * (0.5 * likelihood_covar @ u - rhs)).sum() / rhs_norm
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()   
+            relative_error = u.grad.norm()                           
+            # print(
+            #     f"sigma: {sigma.item():.4f}", 
+            #     f"iteration: {iteration}",
+            #     f"loss: {loss.item():.4f}",
+            #     f"relative_error: {relative_error.item():.6f}",
+            # )
+            if  relative_error < tol:
+                break
+            if iteration > max_iter:
+                warnings.warn(f"Adam not converge with {iteration} iterations. error: {relative_error.item():.6f} (tol: {tol:.6f})")
+                break
+            iteration += 1
+                    
+        return u
     
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = (y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)).real
-
-        class A(gpytorch.LinearOperator):
-
-            def _matmul(self, u):
-                u = u.reshape(y.shape)
-                u = sigma_s**2 * u + sr.downsample(ifft2(FB * fft2(iot(theta0_var * ot(ifft2(FBC * fft2(sr.upsample(u, sf))).real)))).real, sf)
-                u = u.reshape(-1, 1)
-                return u
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([y.numel(), y.numel()])
-        
-        u = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), tolerance=1e-4)
-        u = u.reshape(y.shape)
-        mat = ifft2(FBC * fft2(sr.upsample(u, sf))).real
-
-    return mat
+    def _closed_form(self, x0_var=None):
+        operator, y, y_flatten, x0_mean, x0_covar, sigma = self.saved
+        sigma_s = operator.sigma_s
+        if x0_var is None:
+            x0_var = x0_covar.variance
+        if operator.name == 'inpainting':
+            mask = operator.mask
+            mat = (mask * y - mask * x0_mean) / (sigma_s.pow(2) + x0_var)
+        elif operator.name == 'gaussian_blur' or operator.name == 'motion_blur':
+            FB, FBC, F2B, FBFy = pre_calculate(y, operator.get_kernel(), 1)
+            mat = ifft2(FBC / (sigma_s.pow(2) + x0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
+        elif operator.name == 'super_resolution':
+            sf = operator.scale_factor
+            FB, FBC, F2B, FBFy = pre_calculate(y, operator.get_kernel(), sf)
+            invW = torch.mean(sr.splits(F2B, sf), dim=-1, keepdim=False)
+            mat = ifft2(FBC * (fft2(y - sr.downsample(ifft2(FB * fft2(x0_mean)), sf)) / (sigma_s.pow(2) + x0_var * invW)).repeat(1, 1, sf, sf)).real
+        else:
+            raise NotImplementedError
+        return mat.reshape(-1, 1)
 
 
-#----------------------------------------------------------------------------------
-# Implementation of proximal solver (computing E_q[x0|xt, y]) for type II guidance
-#----------------------------------------------------------------------------------
 
-__PROXIMAL_SOLVER__ = {}
-
-
-def register_proximal_solver(name):
-    def wrapper(func):
-        __PROXIMAL_SOLVER__[name] = func
-        return func
-    return wrapper
-
-
-@register_proximal_solver('inpainting')
-@torch.no_grad()
-def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    mask = operator.mask
-    sigma_s = operator.sigma_s.clip(min=0.001)
-
-    if theta0_var.numel() == 1:
-        cond_x0_mean = (theta0_var * y + sigma_s**2 * x0_mean) / (sigma_s**2 + theta0_var * mask)
     
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = y / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-
-        class A(gpytorch.LinearOperator):
-            
-            def _matmul(self, x):
-                x = x.reshape(x0_mean.shape)
-                x = mask * x / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.reshape(-1, 1)
-                return x
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([x0_mean.numel(), x0_mean.numel()])
-            
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
-        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
-    
-    return cond_x0_mean
-
-
-@torch.no_grad()
-def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    FB, FBC, F2B, FBFy = operator.pre_calculated
-
-    if theta0_var.numel() == 1:
-        rho = sigma_s.pow(2) / theta0_var
-        tau = rho.float().repeat(1, 1, 1, 1)
-        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, 1).float()
-    
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-
-        class A(gpytorch.LinearOperator):
-
-            def _matmul(self, x):
-                x = x.reshape(x0_mean.shape)
-                x = ifft2(F2B * fft2(x)).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.reshape(-1, 1)
-                return x
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([x0_mean.numel(), x0_mean.numel()])
-            
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
-        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape)
-    
-    return cond_x0_mean
-
-
-@register_proximal_solver('gaussian_blur')
-@torch.no_grad()
-def gaussian_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_proximal_solver('motion_blur')
-@torch.no_grad()
-def motion_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_proximal_solver('super_resolution')
-@torch.no_grad()
-def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    sf = operator.scale_factor
-    FB, FBC, F2B, FBFy = operator.pre_calculated
-
-    if theta0_var.numel() == 1:
-        rho = sigma_s.pow(2) / theta0_var
-        tau = rho.float().repeat(1, 1, 1, 1)
-        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, sf).float()
-
-    else:
-        ot = ortho_tf
-        iot = ortho_tf.inv
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-
-        class A(gpytorch.LinearOperator):
-
-            def _matmul(self, x):
-                x = x.reshape(x0_mean.shape)
-                x = ifft2(FBC * fft2(sr.upsample(sr.downsample(ifft2(FB * fft2(x)), sf), sf))).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.reshape(-1, 1)
-                return x
-            
-            def _transpose_nonbatch(self: gpytorch.LinearOperator) -> gpytorch.LinearOperator:
-                return self
-            
-            def _size(self) -> torch.Size:
-                return torch.Size([x0_mean.numel(), x0_mean.numel()])
-            
-        cond_x0_mean = gpytorch.utils.linear_cg(A().matmul, b.reshape(-1, 1), initial_guess=x0_mean.reshape(-1, 1), tolerance=1e-4)
-        cond_x0_mean = cond_x0_mean.reshape(x0_mean.shape) 
-
-    return cond_x0_mean

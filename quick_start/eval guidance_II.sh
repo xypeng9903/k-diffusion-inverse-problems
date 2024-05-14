@@ -1,8 +1,8 @@
 THRES=$1
-GUIDANCE=I-$THRES
+GUIDANCE=II-$THRES
 CONFIG="configs/test_ffhq_dwt.json"
 CHECKPOINT="../model_zoo/ffhq_dwt.ckpt"
-GLOBAL_ARGS="--config $CONFIG --checkpoint $CHECKPOINT --guidance $GUIDANCE --euler --ode"
+GLOBAL_ARGS="--config $CONFIG --checkpoint $CHECKPOINT --guidance $GUIDANCE --euler"
 
 
 python sample_condition.py \
@@ -23,4 +23,4 @@ python sample_condition.py \
 python sample_condition.py \
     $GLOBAL_ARGS \
     --operator-config configs/super_resolution_4x_config.yaml \
-    --logdir runs/sample_condition/ffhq/super_resolution/$GUIDANCE
+    --logdir runs/sam   ple_condition/ffhq/super_resolution/$GUIDANCE

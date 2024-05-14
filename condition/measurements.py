@@ -4,8 +4,10 @@ from abc import ABC, abstractmethod
 from functools import partial
 import yaml
 from torch.nn import functional as F
-from torchvision import torch
-from motionblur.motionblur import Kernel
+import torch
+import torchvision
+import linear_operator
+from einops import rearrange
 
 from condition.dps_utils.resizer import Resizer
 from condition.dps_utils.img_utils import Blurkernel, fft2_m
@@ -38,6 +40,58 @@ def get_operator(name: str, **kwargs):
         raise NameError(f"Name {name} is not defined.")
     return __OPERATOR__[name](**kwargs)
 
+
+def convert_to_linear_op(operator):    
+    A = OperatorWrapper(torch.zeros((1,), device=operator.device), operator)
+    AT = A.transpose(-2, -1)
+    sigma_s = operator.sigma_s
+    return A, AT, sigma_s    
+    
+    
+class OperatorWrapper(linear_operator.LinearOperator):
+                
+        def __init__(self, tmp: torch.Tensor, operator, mode=1):
+            super().__init__(tmp, operator=operator, mode=mode)
+            self.tmp = tmp
+            self.operator = operator
+            self.mode = mode
+        
+        def _A(self, rhs):
+            c, h, w = self.operator.in_shape[-3:]
+            b = rhs.shape[-1]
+            rhs = rearrange(rhs, '(c h w) b -> b c h w', b=b, c=c, h=h, w=w)
+            rhs = self.operator.forward(rhs, flatten=True, noiseless=True)[1]
+            rhs = rhs.transpose(0, 1)
+            return rhs
+        
+        def _AT(self, rhs):
+            rhs = rhs.transpose(0, 1)
+            rhs = self.operator.transpose(rhs, flatten=True)
+            rhs = rhs.reshape(rhs.shape[0], -1)
+            rhs = rhs.transpose(0, 1)
+            return rhs
+        
+        def _matmul(self: linear_operator.LinearOperator, rhs: F.Tensor) -> F.Tensor:
+            if self.mode == 1:
+                return self._A(rhs)
+            else:
+                return self._AT(rhs)
+        
+        def _size(self) -> torch.Size:
+            in_dim = torch.tensor(self.operator.in_shape).prod().item()
+            out_dim = torch.tensor(self.operator.out_shape).prod().item()
+            if self.mode == 1:
+                return torch.Size([out_dim, in_dim])
+            else:
+                return torch.Size([in_dim, out_dim])
+        
+        def _transpose_nonbatch(self) -> linear_operator.LinearOperator:
+            args = self._args
+            kwargs = self._kwargs
+            kwargs['mode'] = -kwargs['mode']
+            out = self.__class__(*args, **kwargs)
+            return out
+        
 
 class LinearOperator(ABC):
 
@@ -104,8 +158,6 @@ class SuperResolutionOperator(LinearOperator):
         y = self.down_sample(data) 
         if not noiseless:
             y += self.sigma_s * torch.randn_like(y)
-        k = self.get_kernel().to(self.device)
-        self.pre_calculated = pre_calculate(y, k, self.scale_factor)
         if flatten:
             return y, y.reshape(y.shape[0], -1)
         return y
@@ -119,7 +171,7 @@ class SuperResolutionOperator(LinearOperator):
         return x
     
     def get_kernel(self):
-        return self.kernel.view(1, 1, *self.kernel.shape)
+        return self.kernel.view(1, 1, *self.kernel.shape).to(self.device)
     
 
 @register_operator(name='motion_blur')
@@ -135,6 +187,7 @@ class MotionBlurOperator(LinearOperator):
         self.conv.update_weights(self.kernel)
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
         self.in_shape = in_shape
+        self.out_shape = in_shape
 
     def forward(self, data, flatten=False, noiseless=False): # TODO
         k = self.get_kernel().to(self.device)
@@ -174,6 +227,7 @@ class GaussialBlurOperator(LinearOperator):
         self.conv.update_weights(self.kernel.type(torch.float32))
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
         self.in_shape = in_shape
+        self.out_shape = in_shape
 
     def forward(self, data, flatten=False, noiseless=False):
         k = self.get_kernel().to(self.device)
@@ -181,8 +235,6 @@ class GaussialBlurOperator(LinearOperator):
         y = ifft2(FB * fft2(data)).real
         if not noiseless:
             y += self.sigma_s * torch.randn_like(y)
-        self.pre_calculated = (FB, FBC, F2B, FBC * fft2(y))
-        
         if flatten:
             return y, y.reshape(y.shape[0], -1)
         return y
@@ -202,11 +254,12 @@ class GaussialBlurOperator(LinearOperator):
 @register_operator(name='inpainting')
 class InpaintingOperator(LinearOperator):
     '''This operator get pre-defined mask and return masked image.'''
-    def __init__(self, device, sigma_s, mask_opt):
+    def __init__(self, device, sigma_s, mask):
         self.device = device
         self.sigma_s = torch.Tensor([sigma_s]).to(device)
-        self.in_shape = (1, 3, mask_opt['image_size'], mask_opt['image_size'])
-        self.mask = self.generate_mask(mask_opt)
+        self.mask = (torchvision.io.read_image(mask) / 255).round().int().to(self.device)
+        self.in_shape = self.mask.shape
+        self.out_shape = (1, 1, self.mask.sum())
     
     def forward(self, data: torch.Tensor, flatten=False, noiseless=False):        
         y = data.clone()
@@ -227,97 +280,14 @@ class InpaintingOperator(LinearOperator):
     
     def transpose(self, data, flatten=False):
         y = data.clone()
-
         if flatten:
             sample_indices = torch.where(self.mask > 0)
             x = torch.zeros(y.shape[0], *self.in_shape[-3:]).to(self.device)
             x[..., sample_indices[-3], sample_indices[-2], sample_indices[-1]] = y
         else:
             x = y
-        
         return x
-        
-    def generate_mask(self, mask_opt):
-        mask_generator = MaskGenerator(**mask_opt)
-        img = torch.randn(*self.in_shape).to(self.device)
-        mask = mask_generator(img)
-        return mask
     
-
-class MaskGenerator:
-    def __init__(self, mask_type, mask_len_range=None, mask_prob_range=None,
-                 image_size=256, margin=(16, 16)):
-        """
-        (mask_len_range): given in (min, max) tuple.
-        Specifies the range of box size in each dimension
-        (mask_prob_range): for the case of random masking,
-        specify the probability of individual pixels being masked
-        """
-        assert mask_type in ['box', 'random', 'both', 'extreme']
-        self.mask_type = mask_type
-        self.mask_len_range = mask_len_range
-        self.mask_prob_range = mask_prob_range
-        self.image_size = image_size
-        self.margin = margin
-
-    def __call__(self, img):
-        if self.mask_type == 'random':
-            mask = self._retrieve_random(img)
-            return mask
-        elif self.mask_type == 'box':
-            mask, t, th, w, wl = self._retrieve_box(img)
-            return mask
-        elif self.mask_type == 'extreme':
-            mask, t, th, w, wl = self._retrieve_box(img)
-            mask = 1. - mask
-            return mask
-
-    def _retrieve_box(self, img):
-        l, h = self.mask_len_range
-        l, h = int(l), int(h)
-        mask_h = np.random.randint(l, h)
-        mask_w = np.random.randint(l, h)
-        mask, t, tl, w, wh = self._random_sq_bbox(img,
-                              mask_shape=(mask_h, mask_w),
-                              image_size=self.image_size,
-                              margin=self.margin)
-        return mask, t, tl, w, wh
-
-    def _retrieve_random(self, img):
-        total = self.image_size ** 2
-        # random pixel sampling
-        l, h = self.mask_prob_range
-        prob = np.random.uniform(l, h)
-        mask_vec = torch.ones([1, self.image_size * self.image_size])
-        samples = np.random.choice(self.image_size * self.image_size, int(total * prob), replace=False)
-        mask_vec[:, samples] = 0
-        mask_b = mask_vec.view(1, self.image_size, self.image_size)
-        mask_b = mask_b.repeat(3, 1, 1)
-        mask = torch.ones_like(img, device=img.device)
-        mask[:, ...] = mask_b
-        return mask
-    
-    def _random_sq_bbox(self, img, mask_shape, image_size=256, margin=(16, 16)):
-        """Generate a random sqaure mask for inpainting
-        """
-        B, C, H, W = img.shape
-        h, w = mask_shape
-        margin_height, margin_width = margin
-        maxt = image_size - margin_height - h
-        maxl = image_size - margin_width - w
-
-        # bb
-        # t = np.random.randint(margin_height, maxt)
-        # l = np.random.randint(margin_width, maxl)
-        t = (margin_height + maxt) // 2
-        l = (margin_width + maxl) // 2
-
-        # make mask
-        mask = torch.ones([B, C, H, W], device=img.device)
-        mask[..., t:t+h, l:l+w] = 0
-
-        return mask, t, t+h, l, l+w
-
 
 class NonLinearOperator(ABC):
     @abstractmethod
