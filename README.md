@@ -1,6 +1,6 @@
 ## Introduction
 
-This branch contains an unified implementation of Type I and Type II guidance discussed in the paper [Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance](https://arxiv.org/abs/2402.02149). Specifically, suppose $\mu_t(\mathbf{x}_t)\approx \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t]$ and $\Sigma^{(1)}_t(\mathbf{x}_t)$ and $\Sigma^{(2)}_t(\mathbf{x}_t)$ are two approximations for $\mathrm{Cov}[\mathbf{x}_0|\mathbf{x}_t]$, then the conditional posterior mean can be approximated by
+This branch contains a unified implementation of Type I and Type II guidance discussed in the paper [Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance](https://arxiv.org/abs/2402.02149). Specifically, suppose $\mu_t(\mathbf{x}_t)\approx \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t]$ and $\Sigma^{(1)}_t(\mathbf{x}_t)$ and $\Sigma^{(2)}_t(\mathbf{x}_t)$ are two approximations for $\mathrm{Cov}[\mathbf{x}_0|\mathbf{x}_t]$, then the conditional posterior mean can be approximated by
 
 $$
 \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] \approx \mu_t(\mathbf{x}_t) + \Sigma^{(1)}_t(\mathbf{x}_t) \mathbf{A}^T (\sigma^2 I + \mathbf{A} \Sigma^{(2)}_t(\mathbf{x}_t) \mathbf{A}^T)^{-1} (\mathbf{y} - \mathbf{A}\mu_t(\mathbf{x}_t)) \tag{1}
