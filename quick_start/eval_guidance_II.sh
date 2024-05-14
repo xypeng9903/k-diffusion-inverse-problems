@@ -2,7 +2,7 @@ THRES=$1
 GUIDANCE=II-$THRES
 CONFIG="configs/test_ffhq_dwt.json"
 CHECKPOINT="../model_zoo/ffhq_dwt.ckpt"
-GLOBAL_ARGS="--config $CONFIG --checkpoint $CHECKPOINT --guidance $GUIDANCE --euler"
+GLOBAL_ARGS="--config $CONFIG --checkpoint $CHECKPOINT --guidance $GUIDANCE"
 
 
 python sample_condition.py \
