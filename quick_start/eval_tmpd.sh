@@ -10,47 +10,25 @@ else
     echo "Invalid dataset."
 fi
 
+GLOBAL_ARGS="--save-img --ode --guidance I --xstart-cov-type tmpd --config ${CONFIG} --checkpoint ${CHECKPOINT}"
+
 
 python sample_condition_openai.py \
---guidance I \
---xstart-cov-type tmpd \
---ode \
---save-img \
---config ${CONFIG} \
---checkpoint ${CHECKPOINT} \
---operator-config configs/gaussian_deblur_config.yaml \
---logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/tmpd \
---mle-sigma-thres 80
+    $GLOBAL_ARGS \
+    --operator-config configs/gaussian_deblur_config.yaml \
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/tmpd
 
 python sample_condition_openai.py \
---guidance I \
---xstart-cov-type tmpd \
---ode \
---save-img \
---config ${CONFIG} \
---checkpoint ${CHECKPOINT} \
---operator-config configs/motion_deblur_config.yaml \
---logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/tmpd \
---mle-sigma-thres 80
+    $GLOBAL_ARGS \
+    --operator-config configs/motion_deblur_config.yaml \
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/tmpd
 
 python sample_condition_openai.py \
---guidance I \
---xstart-cov-type tmpd \
---ode \
---save-img \
---config ${CONFIG} \
---checkpoint ${CHECKPOINT} \
---operator-config configs/inpainting_config.yaml \
---logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/tmpd \
---mle-sigma-thres 80
+    $GLOBAL_ARGS \
+    --operator-config configs/inpainting_config.yaml \
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/tmpd
 
 python sample_condition_openai.py \
---guidance I \
---xstart-cov-type tmpd \
---ode \
---save-img \
---config ${CONFIG} \
---checkpoint ${CHECKPOINT} \
---operator-config configs/super_resolution_4x_config.yaml \
---logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/tmpd \
---mle-sigma-thres 80
+    $GLOBAL_ARGS \
+    --operator-config configs/super_resolution_4x_config.yaml \
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/tmpd

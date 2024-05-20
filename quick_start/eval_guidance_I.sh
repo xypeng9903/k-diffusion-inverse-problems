@@ -10,46 +10,32 @@ else
     echo "Invalid dataset."
 fi
 
+GLOBAL_ARGS="--save-img --ode --guidance I --config ${CONFIG} --checkpoint ${CHECKPOINT}"
+
 
 for COV in dps pgdm analytic convert
 do
     python sample_condition_openai.py \
-    --guidance I \
+    $GLOBAL_ARGS \
     --xstart-cov-type ${COV} \
-    --ode \
-    --save-img \
-    --config ${CONFIG} \
-    --checkpoint ${CHECKPOINT} \
+    --operator-config configs/inpainting_config.yaml \
+    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/${COV}
+    
+    python sample_condition_openai.py \
+    $GLOBAL_ARGS \
+    --xstart-cov-type ${COV} \
     --operator-config configs/gaussian_deblur_config.yaml \
     --logdir runs/sample_condition_openai/guidance_I/${DATASET}/gaussian_deblur/${COV} 
 
     python sample_condition_openai.py \
-    --guidance I \
+    $GLOBAL_ARGS \
     --xstart-cov-type ${COV} \
-    --ode \
-    --save-img \
-    --config ${CONFIG} \
-    --checkpoint ${CHECKPOINT} \
     --operator-config configs/motion_deblur_config.yaml \
     --logdir runs/sample_condition_openai/guidance_I/${DATASET}/motion_deblur/${COV} 
 
     python sample_condition_openai.py \
-    --guidance I \
+    $GLOBAL_ARGS \
     --xstart-cov-type ${COV} \
-    --ode \
-    --save-img \
-    --config ${CONFIG} \
-    --checkpoint ${CHECKPOINT} \
-    --operator-config configs/inpainting_config.yaml \
-    --logdir runs/sample_condition_openai/guidance_I/${DATASET}/inpaint/${COV}
-
-    python sample_condition_openai.py \
-    --guidance I \
-    --xstart-cov-type ${COV} \
-    --ode \
-    --save-img \
-    --config ${CONFIG} \
-    --checkpoint ${CHECKPOINT} \
     --operator-config configs/super_resolution_4x_config.yaml \
     --logdir runs/sample_condition_openai/guidance_I/${DATASET}/super_resolution/${COV}
 done

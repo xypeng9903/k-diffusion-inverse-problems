@@ -10,49 +10,39 @@ else
     echo "Invalid dataset."
 fi
 
+GLOBAL_ARGS="--save-img --ode --guidance II --config ${CONFIG} --checkpoint ${CHECKPOINT}"
+
 
 for COV in diffpir analytic convert
 do
     for LAM in 1e-2 1e-1 1e0 1e1 1e2
     do
         python sample_condition_openai.py \
-        --guidance II \
+        $GLOBAL_ARGS \
         --xstart-cov-type ${COV} \
-        --save-img \
-        --config ${CONFIG} \
-        --checkpoint ${CHECKPOINT} \
+        --lam ${LAM} \
         --operator-config configs/inpainting_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/inpaint/${COV}/lam_${LAM} \
-        --lam ${LAM}
+        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/inpaint/${COV}/lam_${LAM}
 
         python sample_condition_openai.py \
-        --guidance II \
+        $GLOBAL_ARGS \
         --xstart-cov-type ${COV} \
-        --save-img \
-        --config ${CONFIG} \
-        --checkpoint ${CHECKPOINT} \
+        --lam ${LAM} \
         --operator-config configs/gaussian_deblur_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/gaussian_deblur/${COV}/lam_${LAM} \
-        --lam ${LAM} 
+        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/gaussian_deblur/${COV}/lam_${LAM}
 
         python sample_condition_openai.py \
-        --guidance II \
+        $GLOBAL_ARGS \
         --xstart-cov-type ${COV} \
-        --save-img \
-        --config ${CONFIG} \
-        --checkpoint ${CHECKPOINT} \
+        --lam ${LAM} \
         --operator-config configs/motion_deblur_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/motion_deblur/${COV}/lam_${LAM} \
-        --lam ${LAM} 
+        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/motion_deblur/${COV}/lam_${LAM}
 
         python sample_condition_openai.py \
-        --guidance II \
+        $GLOBAL_ARGS \
         --xstart-cov-type ${COV} \
-        --save-img \
-        --config ${CONFIG} \
-        --checkpoint ${CHECKPOINT} \
+        --lam ${LAM} \
         --operator-config configs/super_resolution_4x_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/super_resolution/${COV}/lam_${LAM} \
-        --lam ${LAM} 
+        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/super_resolution/${COV}/lam_${LAM}
     done
 done

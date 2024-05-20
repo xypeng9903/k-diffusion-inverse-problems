@@ -3,34 +3,28 @@
 """Samples from k-diffusion models."""
 
 import argparse
-import math
-
 import accelerate
 import torch
-from tqdm import trange, tqdm
-
-import k_diffusion as K
-from condition.condition import ConditionOpenAIDenoiser
-from condition.measurements import get_operator
-
+from tqdm import tqdm
+import yaml
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+import lpips
+import os
+from functools import partial
 from guided_diffusion import dist_util
 from guided_diffusion.script_util import (
-    NUM_CLASSES,
     model_and_diffusion_defaults,
     create_model_and_diffusion,
     args_to_dict,
     add_dict_to_argparser
 )
-from condition.diffpir_utils import utils_model
 from torch.utils import data
 from torchvision import transforms
 
-import yaml
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-import lpips
-import os
-
-from functools import partial
+import k_diffusion as K
+from condition.diffpir_utils import utils_model
+from condition.condition import ConditionOpenAIDenoiser
+from condition.measurements import get_operator
 
 
 def load_yaml(file_path: str) -> dict:
