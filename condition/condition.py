@@ -57,18 +57,18 @@ class ConditionDenoiser(nn.Module):
         super().__init__()
         self.operator = operator
         self.y, self.y_flatten = measurement
+        
         self.guidance = guidance
         self.zeta = zeta
         self.lambda_ = lambda_
         self.eta = eta
         self.num_hutchinson_samples = num_hutchinson_samples
-        self.device = device
         self.mle_sigma_thres = mle_sigma_thres
+        
+        self.device = device
         self.ortho_tf_type = ortho_tf_type
         self.ortho_tf = OrthoTransform(ortho_tf_type)
-    
         self.mat_solver = __MAT_SOLVER__[operator.name]
-        self.proximal_solver = __PROXIMAL_SOLVER__[operator.name]
 
     @abstractmethod
     def uncond_pred(self, x, sigma):
@@ -159,15 +159,18 @@ class ConditionDenoiser(nn.Module):
     def _pgdm_guidance_impl(self, x, sigma):
         x = x.requires_grad_()
         x0_mean = self.uncond_pred(x, sigma)[0]
-        mat = self.mat_solver(self.operator, self.y, x0_mean, sigma.pow(2) / (1 + sigma.pow(2)))
-        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0] * (sigma.pow(2) / (1 + sigma.pow(2)))
+        x0_var = sigma.pow(2) / (1 + sigma.pow(2))
+        mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
+        likelihood_score = grad((mat.detach() * x0_mean).sum(), x)[0] * x0_var
         hat_x0 = x0_mean + sigma.pow(2) * likelihood_score 
         return hat_x0
 
     def _diffpir_guidance_impl(self, x, sigma):
         assert self.lambda_ is not None, "lambda_ must be specified for DiffPIR guidance"
         x0_mean = self.uncond_pred(x, sigma)[0]
-        hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, sigma.pow(2) / self.lambda_)
+        x0_var = sigma.pow(2) / self.lambda_
+        mat = self.mat_solver(self.operator, self.y, x0_mean, x0_var)
+        hat_x0 = x0_mean + mat * x0_var
         return hat_x0
 
     def _type_I_guidance_impl(self, x, sigma):
@@ -181,8 +184,11 @@ class ConditionDenoiser(nn.Module):
     
     def _type_II_guidance_impl(self, x, sigma):
         x0_mean, x0_var, theta0_var = self.uncond_pred(x, sigma)
-        hat_x0 = self.proximal_solver(self.operator, self.y, x0_mean, 
-                                      x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
+        mat = self.mat_solver(self.operator, self.y, x0_mean, 
+                              x0_var if self.ortho_tf_type is None else theta0_var, self.ortho_tf)
+        ot = self.ortho_tf
+        iot = self.ortho_tf.inv
+        hat_x0 = x0_mean + iot(ot(mat) * (x0_var if self.ortho_tf_type is None else theta0_var))
         return hat_x0
     
     def _stsl_guidance_impl(self, x, sigma):
@@ -215,16 +221,16 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
     
     def __init__(
         self, 
-        denoiser, 
+        inner_model, 
         diffusion: GaussianDiffusion, 
         x0_cov_type,
         recon_mse,
         **kwargs
     ):
         super().__init__(**kwargs)
-        self.denoiser = denoiser
+        self.inner_model = inner_model
         self.diffusion = diffusion
-        self.openai_denoiser = OpenAIDenoiser(denoiser, diffusion, device=self.device)
+        self.denoiser = OpenAIDenoiser(inner_model, diffusion, device=self.device)
         self.x0_cov_type = x0_cov_type
         self.recon_mse = recon_mse
         if recon_mse is not None:
@@ -232,13 +238,13 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 self.recon_mse[key] = self.recon_mse[key].to(self.device)
 
     def uncond_pred(self, x, sigma):
-        c_out, c_in = self.openai_denoiser.get_scalings(sigma)
-        t = self.openai_denoiser.sigma_to_t(sigma).long()
+        c_out, c_in = self.denoiser.get_scalings(sigma)
+        t = self.denoiser.sigma_to_t(sigma).long()
         D = self.diffusion
 
         if self.x0_cov_type == 'tmpd':
             x = x.requires_grad_()
-        xprev_pred = D.p_mean_variance(self.denoiser, x * c_in, t)
+        xprev_pred = D.p_mean_variance(self.inner_model, x * c_in, t)
         x0_mean = xprev_pred['pred_xstart']
 
         if self.x0_cov_type == 'convert':
@@ -478,144 +484,3 @@ def super_resolution_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransfo
         mat = (ifft2(FBC * fft2(sr.upsample(u, sf))).real).to(device)
 
     return mat
-
-
-#----------------------------------------------------------------------------------
-# Implementation of proximal solver (computing E_q[x0|xt, y]) for type II guidance
-#----------------------------------------------------------------------------------
-
-__PROXIMAL_SOLVER__ = {}
-
-
-def register_proximal_solver(name):
-    def wrapper(func):
-        __PROXIMAL_SOLVER__[name] = func
-        return func
-    return wrapper
-
-
-@register_proximal_solver('inpainting')
-@torch.no_grad()
-def inpainting_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    mask = operator.mask
-    sigma_s = operator.sigma_s.clip(min=0.001)
-
-    if theta0_var.numel() == 1:
-        cond_x0_mean = (theta0_var * y + sigma_s**2 * x0_mean) / (sigma_s**2 + theta0_var * mask)
-    
-    else:
-        device = x0_mean.device
-        sigma_s, mask, y, x0_mean, theta0_var = \
-            sigma_s.cpu(), mask.cpu(), y.cpu(), x0_mean.cpu(), theta0_var.cpu()
-        ot = ortho_tf
-        iot = ortho_tf.inv
-
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
-
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
-                x = mask * x / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
-                return x
-            
-        b = y / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device) 
-    
-    return cond_x0_mean
-
-
-@torch.no_grad()
-def _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    FB, FBC, F2B, FBFy = operator.pre_calculated
-
-    if theta0_var.numel() == 1:
-        rho = sigma_s.pow(2) / theta0_var
-        tau = rho.float().repeat(1, 1, 1, 1)
-        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, 1).float()
-    
-    else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), x0_mean.cpu(), theta0_var.cpu()
-        ot = ortho_tf
-        iot = ortho_tf.inv
-
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
-
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
-                x = ifft2(F2B * fft2(x)).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
-                return x
-            
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device) 
-    
-    return cond_x0_mean
-
-
-@register_proximal_solver('gaussian_blur')
-@torch.no_grad()
-def gaussian_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_proximal_solver('motion_blur')
-@torch.no_grad()
-def motion_blur_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    return _deblur_proximal(operator, y, x0_mean, theta0_var, ortho_tf)
-
-
-@register_proximal_solver('super_resolution')
-@torch.no_grad()
-def super_resolution_proximal(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
-    sigma_s = operator.sigma_s.clip(min=0.001)
-    sf = operator.scale_factor
-    FB, FBC, F2B, FBFy = operator.pre_calculated
-
-    if theta0_var.numel() == 1:
-        rho = sigma_s.pow(2) / theta0_var
-        tau = rho.float().repeat(1, 1, 1, 1)
-        cond_x0_mean = sr.data_solution(x0_mean.float(), FB, FBC, F2B, FBFy, tau, sf).float()
-
-    else:
-        device = x0_mean.device
-        sigma_s, FB, FBC, F2B, FBFy, x0_mean, theta0_var = \
-            sigma_s.cpu(), FB.cpu(), FBC.cpu(), F2B.cpu(), FBFy.cpu(), x0_mean.cpu(), theta0_var.cpu()
-        ot = ortho_tf
-        iot = ortho_tf.inv
-
-        class A(LinearOperator):
-            def __init__(self):
-                super().__init__(np.float32, (x0_mean.numel(), x0_mean.numel()))
-
-            def _matvec(self, x):
-                x = torch.Tensor(x).reshape(x0_mean.shape)
-                x = ifft2(FBC * fft2(sr.upsample(sr.downsample(ifft2(FB * fft2(x)), sf), sf))).real / sigma_s**2 + iot(ot(x) / theta0_var)
-                x = x.flatten().detach().cpu().numpy()
-                return x
-            
-        b = ifft2(FBFy).real / sigma_s**2 + iot(ot(x0_mean) / theta0_var)
-        b = b.flatten().detach().cpu().numpy()
-
-        cond_x0_mean, info = cg(A(), b, x0=x0_mean.flatten().detach().cpu().numpy(), tol=1e-4, maxiter=1000)
-        if info != 0:
-            warn('CG not converge.')
-        cond_x0_mean = torch.Tensor(cond_x0_mean).reshape(x0_mean.shape).to(device)
-
-    return cond_x0_mean

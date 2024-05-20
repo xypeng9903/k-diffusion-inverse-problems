@@ -174,7 +174,7 @@ def main():
             x0 = x0.to(device)
             measurement = operator.forward(x0.clone(), flatten=True)
             model = ConditionOpenAIDenoiser(
-                denoiser=inner_model,
+                inner_model=inner_model,
                 diffusion=diffusion,
                 operator=operator,
                 measurement=measurement,
