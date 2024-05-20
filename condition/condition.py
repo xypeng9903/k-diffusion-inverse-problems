@@ -6,7 +6,6 @@ from scipy.sparse.linalg import cg, LinearOperator
 import numpy as np
 from warnings import warn
 from abc import abstractmethod
-from functools import partial
 import gpytorch
 from gpytorch.distributions import MultivariateNormal
 
@@ -394,7 +393,7 @@ def _deblur_mat(operator, y, x0_mean, theta0_var, ortho_tf=OrthoTransform()):
     FB, FBC, F2B, FBFy = operator.pre_calculated
 
     if theta0_var.numel() == 1:
-        mat = ifft2(FBC / (sigma_s.pow(2) + theta0_var * F2B) * fft2(y - ifft2(FB * fft2(x0_mean)))).real
+        mat = ifft2(fft2(y - ifft2(FB * fft2(x0_mean))) / (sigma_s.pow(2) + theta0_var * F2B) * FBC).real
     
     else:
         device = x0_mean.device

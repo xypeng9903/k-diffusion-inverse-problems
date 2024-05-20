@@ -188,7 +188,7 @@ def main():
                 sampler = partial(K.sampling.sample_heun if not args.euler else K.sampling.sample_euler,
                                   model, x, sigmas, disable=not accelerator.is_local_main_process)
                 if not args.ode:
-                    x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
+                    x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=50, s_noise=1.003)
                 else:
                     x_0 = sampler()     
                 return x_0

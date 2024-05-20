@@ -74,8 +74,9 @@ def main():
                    help='the number of images to sample')
     p.add_argument('--prefix', type=str, default='out',
                    help='the output prefix')
-    p.add_argument('--steps', type=int, default=50,
-                   help='the number of denoising steps')
+    p.add_argument('--logdir', type=str, default=os.path.join("runs", f"{__file__[:-3]}", "temp"))
+    p.add_argument('--save-img', dest='save_img', action='store_true')
+    
     # sampler
     p.add_argument('--steps', type=int, default=50, help='the number of denoising steps')
     p.add_argument('--ode', dest='ode', action='store_true')
@@ -88,6 +89,7 @@ def main():
     p.add_argument('--zeta', type=float, default=None)
     p.add_argument('--num-hutchinson-samples', type=int, default=None)
     p.add_argument('--eta', type=float, default=None)
+    p.add_argument('--spatial-var', dest='spatial_var', action='store_true')
 
 
     #-----------------------------------------
@@ -166,9 +168,9 @@ def main():
                 sampler = partial(K.sampling.sample_heun if not args.euler else K.sampling.sample_euler,
                                   cond_model, x, sigmas, disable=not accelerator.is_local_main_process)
                 if not args.ode:
-                    x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=1, s_noise=1.007)
+                    x_0 = sampler(s_churn=80, s_tmin=0.05, s_tmax=50, s_noise=1.003)
                 else:
-                    x_0 = sampler()     
+                    x_0 = sampler()
                 return x_0
             
             hat_x0 = K.evaluation.compute_features(accelerator, sample_fn, lambda x: x, args.n, args.batch_size)
