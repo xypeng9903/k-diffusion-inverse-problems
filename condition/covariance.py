@@ -128,7 +128,7 @@ class TweedieCovariance(LinearOperator):
     
     def __init__(
             self, 
-            x: torch.Tensor, 
+            xt: torch.Tensor, 
             denoiser, 
             sigma: torch.Tensor
         ):
@@ -137,20 +137,20 @@ class TweedieCovariance(LinearOperator):
             denoiser: E[x0|xt]
             xt, sigma: xt = x0 + sigma * n, n ~ N(0, I) 
         """
-        super().__init__(x, denoiser=denoiser, sigma=sigma)
-        self.saved = x, denoiser, sigma
+        super().__init__(xt, denoiser=denoiser, sigma=sigma)
+        self.saved = xt, denoiser, sigma
         
     def _matmul(self: LinearOperator, rhs: torch.Tensor) -> torch.Tensor:
-        x, denoiser, sigma = self.saved
-        b, c, h, w = x.shape
+        xt, denoiser, sigma = self.saved
+        b, c, h, w = xt.shape
         rhs = rearrange(rhs, '(c h w) b -> b c h w', b=b, c=c, h=h, w=w)
         rhs = self._jvp(rhs) * sigma**2
         rhs = rearrange(rhs, 'b c h w -> (c h w) b', b=b, c=c, h=h, w=w)
         return rhs
         
     def _size(self) -> torch.Size:
-        x, denoiser, sigma = self.saved
-        x_dim = torch.tensor(x.shape[-3:]).prod().item()
+        xt, denoiser, sigma = self.saved
+        x_dim = torch.tensor(xt.shape[-3:]).prod().item()
         return torch.Size([x_dim, x_dim])
     
     def _transpose_nonbatch(self: LinearOperator) -> LinearOperator:

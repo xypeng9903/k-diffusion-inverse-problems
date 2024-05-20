@@ -2,13 +2,15 @@ import warnings
 import torch
 from torch import nn
 from torch.fft import fft2, ifft2
+from torch.autograd import grad
 from abc import abstractmethod
 from condition.diffpir_utils.utils_sisr import pre_calculate
 from linear_operator.utils import linear_cg
+from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 
 import condition.diffpir_utils.utils_sisr as sr
 from .measurements import convert_to_linear_op
-from k_diffusion.external import OpenAIDenoiserV2
+from k_diffusion.external import OpenAIDenoiserV2, OpenAIDenoiser
 from .covariance import (
     IsotropicCovariance,
     DiagonalCovariance,
@@ -42,12 +44,110 @@ class ConditionDenoiser(nn.Module):
 
     def forward(self, x, sigma):
         assert x.shape[0] == 1
-        x0_mean, tweedie_covar, learned_covar = self.uncond_pred(x, sigma)
-        covar1, covar2 = self.covar_schedule(tweedie_covar, learned_covar, sigma)
+        x0_mean, tweedie_covar, predict_covar = self.uncond_pred(x, sigma)
+        covar1, covar2 = self.covar_schedule(tweedie_covar, predict_covar, sigma)
         mat = MatSolver(self.operator, self.measurement, x0_mean, covar2, sigma).solve()
         correction = (covar1 @ mat).reshape(x0_mean.shape)
         hat_x0 = x0_mean + correction
         return hat_x0.clip(-1, 1).detach()
+    
+
+class ConditionOpenAIDenoiser(ConditionDenoiser):
+    
+    def __init__(
+        self, 
+        inner_model, 
+        diffusion: GaussianDiffusion, 
+        recon_mse,
+        guidance: str = "I-convert",
+        lambda_=None,
+        mle_sigma_thres=0.2,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.inner_model = inner_model
+        self.diffusion = diffusion
+        self.denoiser = OpenAIDenoiser(inner_model, diffusion, device=self.device)
+        self.recon_mse = recon_mse
+        self.guidance = guidance
+        self.lambda_ = lambda_
+        self.mle_sigma_thres = mle_sigma_thres
+        if recon_mse is not None:
+            for key in self.recon_mse.keys():
+                self.recon_mse[key] = self.recon_mse[key].to(self.device)
+
+    def uncond_pred(self, x, sigma):
+        c_out, c_in = self.denoiser.get_scalings(sigma)
+        t = self.denoiser.sigma_to_t(sigma).long()
+        D = self.diffusion
+        x0_cov_type = self.guidance.split('-')[1]
+        
+        if x0_cov_type == 'tmpd':
+            x = x.requires_grad_()
+        xprev_pred = D.p_mean_variance(self.inner_model, x * c_in, t)
+        x0_mean = xprev_pred['pred_xstart']
+
+        if x0_cov_type == 'convert':
+            if sigma < self.mle_sigma_thres:
+                x0_var = (
+                    (xprev_pred['variance'] - _extract_into_tensor(D.posterior_variance, t, x.shape)) \
+                    / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
+                ).clip(min=1e-6).flatten() # Eq. (22)    
+                predict_covar = DiagonalCovariance(x0_var)   
+            else:
+                if self.lambda_ is not None:
+                    x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2))
+                predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        elif x0_cov_type == 'analytic':
+            assert self.recon_mse is not None
+            if sigma < self.mle_sigma_thres:
+                idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
+                x0_var = self.recon_mse['mse_list'][idx]
+            else:
+                if self.lambda_ is not None:
+                    x0_var = sigma.pow(2) / self.lambda_ 
+                else:
+                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+            predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        elif x0_cov_type == 'pgdm':
+            x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+            predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        elif x0_cov_type == 'dps':
+            x0_var = torch.zeros(1).to(self.device) 
+            predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        elif x0_cov_type == 'diffpir':
+            assert self.lambda_ is not None
+            x0_var = sigma.pow(2) / self.lambda_ 
+            predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        elif x0_cov_type == 'tmpd':      
+            x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)
+            predict_covar = IsotropicCovariance(x0_var, x0_mean.numel())
+
+        else:
+            raise ValueError('Invalid posterior covariance type.')
+        
+        tweedie_covar = TweedieCovariance(x, self.denoiser, sigma)
+        
+        return x0_mean, tweedie_covar, predict_covar
+    
+    def covar_schedule(self, tweedie_covar, predict_covar, sigma):
+        guidance = self.guidance.split('-')[0]
+        if guidance == 'I':
+            covar1 = tweedie_covar
+            covar2 = predict_covar
+        elif guidance == 'II':
+            covar1 = predict_covar
+            covar2 = predict_covar
+        else:
+            raise NotImplementedError
+        return covar1, covar2
     
 
 class ConditionOpenAIDenoiserV2(ConditionDenoiser):
@@ -86,20 +186,6 @@ class ConditionOpenAIDenoiserV2(ConditionDenoiser):
             covar = predict_covar if sigma < thres else pgdm_covar
             covar1 = covar
             covar2 = covar
-        elif guidance[0] == 'tweedie':
-            thres1, thres2, thres = float(guidance[1]), float(guidance[2]), float(guidance[3])
-            # covar1
-            if sigma < thres1:
-                covar1 = tweedie_covar
-            else:
-                covar1 = predict_covar
-            # covar2
-            if sigma < thres2:
-                covar2 = tweedie_covar
-            elif sigma < thres:
-                covar2 = predict_covar
-            else:
-                covar2 = pgdm_covar
         else:
             raise NotImplementedError
         return covar1, covar2
