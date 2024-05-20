@@ -13,9 +13,9 @@ python sample_condition_openai_v2.py \
 
 python sample_condition_openai_v2.py \
     $GLOBAL_ARGS \
-    --mle-sigma-thres ${MLE_SIGMA_THRES} \
     --operator-config configs/gaussian_deblur_config.yaml \
-    --logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/gaussian_deblur/mle_sigma_thres_${MLE_SIGMA_THRES}
+    --logdir runs/sample_condition_openai_v2/guidance_II/${DATASET}/gaussian_deblur/mle_sigma_thres_${MLE_SIGMA_THRES} \
+    --mle-sigma-thres ${MLE_SIGMA_THRES}
 
 python sample_condition_openai_v2.py \
     $GLOBAL_ARGS \

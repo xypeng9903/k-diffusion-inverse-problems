@@ -13,7 +13,7 @@ fi
 GLOBAL_ARGS="--save-img --guidance diffpir --config ${CONFIG} --checkpoint ${CHECKPOINT}"
 
 
-for LAM in 1e0
+for LAM in 1e-2 1e-1 1e1 1e2
 do
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
@@ -23,6 +23,7 @@ do
 
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
+        --lam ${LAM} \
         --operator-config configs/gaussian_deblur_config.yaml \
         --logdir runs/sample_condition_openai/guidance_diffpir/${DATASET}/gaussian_deblur/lam_${LAM}
 

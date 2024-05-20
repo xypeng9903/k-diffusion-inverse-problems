@@ -105,6 +105,8 @@ class DiscreteCosineTransform(OrthoLinearFunction):
 
 @register_ot('dwt')
 class DiscreteWaveletTransform(OrthoLinearFunction):
+    
+    dwt_slice = None
 
     def __init__(self, level=3, wavelet='haar') -> None:
         super().__init__()
@@ -115,23 +117,26 @@ class DiscreteWaveletTransform(OrthoLinearFunction):
         device = x.device
         x = x.detach().cpu().numpy()
         x = pywt.wavedec2(x, wavelet=self.wavelet, level=self.level, axes=(-2, -1))
-        x, _ = pywt.coeffs_to_array(x, axes=(-2, -1))
+        x, dwt_slice = pywt.coeffs_to_array(x, axes=(-2, -1))
+        self.dwt_slice = dwt_slice
         x = torch.tensor(x, device=device)
         return x
     
     def transpose(self, x: torch.Tensor) -> torch.Tensor:
         device = x.device
         x = x.detach().cpu().numpy()
-        slice = self._get_slice(x)
-        x = pywt.array_to_coeffs(x, slice, output_format='wavedec2')
+        dwt_slice = self._get_slice(x)
+        x = pywt.array_to_coeffs(x, dwt_slice, output_format='wavedec2')
         x = pywt.waverec2(x, wavelet=self.wavelet, axes=(-2, -1))
         x = torch.tensor(x, device=device)
         return x
 
     def _get_slice(self, x: np.array): # TODO: can we remove this?
-        x = pywt.wavedec2(x, wavelet=self.wavelet, level=self.level, axes=(-2, -1))
-        _, slice = pywt.coeffs_to_array(x, axes=(-2, -1))
-        return slice
+        if self.dwt_slice is None:
+            x = pywt.wavedec2(x, wavelet='haar', level=3, axes=(-2, -1))
+            _, dwt_slice = pywt.coeffs_to_array(x, axes=(-2, -1))
+            self.dwt_slice = dwt_slice
+        return self.dwt_slice
 
 
 #----------------------
