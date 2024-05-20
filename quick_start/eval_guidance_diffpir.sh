@@ -10,32 +10,31 @@ else
     echo "Invalid dataset."
 fi
 
-GLOBAL_ARGS="--save-img --guidance II --config ${CONFIG} --checkpoint ${CHECKPOINT}"
+GLOBAL_ARGS="--save-img --guidance diffpir --config ${CONFIG} --checkpoint ${CHECKPOINT}"
 
 
-for COV in pgdm analytic convert
+for LAM in 1e0
 do
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
-        --xstart-cov-type ${COV} \
+        --lam ${LAM} \
         --operator-config configs/inpainting_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/inpaint/${COV}
+        --logdir runs/sample_condition_openai/guidance_diffpir/${DATASET}/inpaint/lam_${LAM}
 
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
-        --xstart-cov-type ${COV} \
         --operator-config configs/gaussian_deblur_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/gaussian_deblur/${COV}
+        --logdir runs/sample_condition_openai/guidance_diffpir/${DATASET}/gaussian_deblur/lam_${LAM}
 
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
-        --xstart-cov-type ${COV} \
+        --lam ${LAM} \
         --operator-config configs/motion_deblur_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/motion_deblur/${COV}
+        --logdir runs/sample_condition_openai/guidance_diffpir/${DATASET}/motion_deblur/lam_${LAM}
 
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
-        --xstart-cov-type ${COV} \
+        --lam ${LAM} \
         --operator-config configs/super_resolution_4x_config.yaml \
-        --logdir runs/sample_condition_openai/guidance_II/${DATASET}/super_resolution/${COV}
+        --logdir runs/sample_condition_openai/guidance_diffpir/${DATASET}/super_resolution/lam_${LAM}
 done

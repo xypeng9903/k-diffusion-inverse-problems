@@ -120,12 +120,6 @@ class ConditionDenoiser(nn.Module):
             else:
                 hat_x0 = self._pgdm_guidance_impl(x, sigma)
 
-        elif self.guidance == "diffpir+mle":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._type_II_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._diffpir_guidance_impl(x, sigma)
-
         elif self.guidance == "stsl+mle":
             if sigma < self.mle_sigma_thres:
                 hat_x0 = self._type_I_guidance_impl(x, sigma)
@@ -252,21 +246,15 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                     / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
                 ).clip(min=1e-6) # Eq. (22)       
             else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
             if sigma < self.mle_sigma_thres:
                 idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
                 x0_var = self.recon_mse['mse_list'][idx]
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+            else: 
+                x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
