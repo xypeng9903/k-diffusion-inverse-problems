@@ -18,17 +18,19 @@ from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into
 
 
 class LazyLikelihoodCovariance(gpytorch.LinearOperator):
+    
+    def __init__(self, y_flatten, x0_cov, operator):
+        super().__init__(y_flatten, x0_cov=x0_cov, operator=operator)
+        self.saved = x0_cov, operator
 
     def _matmul(self: gpytorch.LinearOperator, rhs: torch.Tensor) -> torch.Tensor:
-        x0_cov, operator = self._kwargs['x0_cov'], self._kwargs['operator']
+        x0_cov, operator = self.saved
         sigma_s = operator.sigma_s
-        A = partial(operator.forward, noiseless=True, flatten=True)
-        AT = partial(operator.transpose, flatten=True)
-        
+        A = lambda x: operator.forward(x,  noiseless=True, flatten=True)[1]
+        AT = lambda x: operator.transpose(x, flatten=True)
         rhs = rhs.permute(1, 0)
-        rhs = sigma_s**2 * rhs + A(x0_cov(AT(rhs)))[1]
+        rhs = sigma_s**2 * rhs + A(x0_cov(AT(rhs)))
         rhs = rhs.permute(1, 0)
-
         return rhs
     
     def _size(self) -> torch.Size:
@@ -87,10 +89,7 @@ class ConditionDenoiser(nn.Module):
             hat_x0 = self.uncond_pred(x, sigma)[0]
 
         elif self.guidance == "autoI":
-            if sigma < self.mle_sigma_thres:
-                hat_x0 = self._auto_type_I_guidance_impl(x, sigma)
-            else:
-                hat_x0 = self._type_I_guidance_impl(x, sigma)
+            hat_x0 = self._auto_type_I_guidance_impl(x, sigma)
 
         elif self.guidance == "I":
             hat_x0 = self._type_I_guidance_impl(x, sigma)
@@ -281,13 +280,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             x0_var = sigma.pow(2) / self.lambda_ 
 
         elif self.x0_cov_type == 'tmpd':      
-            if sigma < self.mle_sigma_thres:
-                x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)      
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+            x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)      
 
         else:
             raise ValueError('Invalid posterior covariance type.')
@@ -347,9 +340,9 @@ class ConditionImageDenoiserV2(ConditionDenoiser):
         return x0_mean, x0_var, theta0_var
 
 
-#----------------------------------------------------------------
-# Implementation of mat solver (computing v) for type I guidance
-#----------------------------------------------------------------
+#---------------------------------------------
+# Implementation of mat solver (computing v)
+#---------------------------------------------
 
 __MAT_SOLVER__ = {}
 
