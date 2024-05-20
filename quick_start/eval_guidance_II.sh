@@ -10,7 +10,7 @@ else
     echo "Invalid dataset."
 fi
 
-GLOBAL_ARGS="--save-img --ode --guidance II --config ${CONFIG} --checkpoint ${CHECKPOINT}"
+GLOBAL_ARGS="--save-img --guidance II --config ${CONFIG} --checkpoint ${CHECKPOINT}"
 
 
 for COV in diffpir analytic convert
