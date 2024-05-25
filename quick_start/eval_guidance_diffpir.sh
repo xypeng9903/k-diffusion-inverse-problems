@@ -13,7 +13,7 @@ fi
 GLOBAL_ARGS="--save-img --guidance diffpir --config ${CONFIG} --checkpoint ${CHECKPOINT}"
 
 
-for LAM in 1e-2 1e-1 1e1 1e2
+for LAM in 0.5 1 5 10 50 100
 do
     python sample_condition_openai.py \
         $GLOBAL_ARGS \
