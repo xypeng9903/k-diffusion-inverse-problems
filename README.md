@@ -86,7 +86,7 @@ From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkel
 
 To run guidance based on ```Analytic``` posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to ```./runs```.
 
-To run guidance based on ```DWT-Var``` covariance, download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link), and paste it to ```../model_zoo```.
+To run guidance based on ```DWT-Var``` posterior covariance, download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link), and paste it to ```../model_zoo```.
 
 
 ### Reproduce Results
