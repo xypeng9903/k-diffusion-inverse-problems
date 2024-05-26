@@ -13,7 +13,7 @@ fi
 GLOBAL_ARGS="--save-img --guidance II --config ${CONFIG} --checkpoint ${CHECKPOINT}"
 
 
-for COV in convert analytic
+for COV in pgdm convert analytic
 do
     python sample_condition_openai.py \
         $GLOBAL_ARGS \

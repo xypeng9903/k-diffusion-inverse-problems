@@ -101,7 +101,7 @@ bash quick_start/dwt_var/eval_guidance_I.sh 1 # for DWT-Var
 For reproducing results on FFHQ dataset in Figure 3, run
 ```bash
 bash quick_start/eval_guidance_diffpir.sh ffhq # for DiffPIR
-bash quick_start/eval_guidance_II.sh ffhq # for Convert, Analytic
+bash quick_start/eval_guidance_II.sh ffhq # for PiGDM, Convert, Analytic
 bash quick_start/dwt_var/eval_guidance_II.sh 1 # for DWT-Var
 ```
 
