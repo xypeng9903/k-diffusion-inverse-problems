@@ -16,7 +16,7 @@ ___________
 **Contents**
 - [Abstract](#abstract)
 - [Brief Introduction](#brief-introduction)
-  - [Unified Intepretation of Diffusion-based Solvers to Inverse Problems](#unified-interpretation-of-diffusion-based-solvers-to-inverse-problems)
+  - [Unified Intepretation of Diffusion-based Solvers to Inverse Problems](#unified-intepretation-of-diffusion-based-solvers-to-inverse-problems)
   - [Solving Inverse Problems With Optimal Posterior Covariance](#solving-inverse-problems-with-optimal-posterior-covariance)
 - [Setting Up](#setting-up)
   - [Setup Conda Environment](#setup-conda-environment)
@@ -32,42 +32,42 @@ Recent diffusion models provide a promising zero-shot solution to noisy linear i
 ## Brief Introduction
 
 ### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
-We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
+We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[{x}_0|{x}_t,{y}]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$ is approximated based on the following relationship:
-
-$$
-\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] = \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t] + s_t \sigma_t^2 \nabla_{\mathbf{x}_t} \log p_t(\mathbf{y}|\mathbf{x}_t)
-$$
-
-where $p_t(\mathbf{y}|\mathbf{x}_t)$ is given by an intractable integral $\mathbb{E}_{p_t(\mathbf{x}_0|\mathbf{x}_t)}[p(\mathbf{y}|\mathbf{x}_0)]$. By introducing an isotrophic Gaussian approximation $q_t(\mathbf{x}_0|\mathbf{x}_t)=\mathcal{N}(\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t], r_t^2 I)$ for $p_t(\mathbf{x}_0|\mathbf{x}_t)$, we can obtain the following approximation by Gaussian marginalization:
+**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[{x}_0|{x}_t,{y}]$ is approximated based on the following relationship:
 
 $$
-p_t(\mathbf{y}|\mathbf{x}_t) \approx \mathcal{N}(\mathbf{y}|\mathbf{A}\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t], \sigma^2 \mathbf{I} + r_t^2 \mathbf{A} \mathbf{A}^T)
+\mathbb{E}[{x}_0|{x}_t,{y}] = \mathbb{E}[{x}_0|{x}_t] + s_t \sigma_t^2 \nabla_{{x}_t} \log p_t({y}|{x}_t)
 $$
 
-**Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t, y]$ with the solution of the following proximal problem:
+where $p_t({y}|{x}_t)$ is given by an intractable integral $\mathbb{E}_{p_t({x}_0|{x}_t)}[p({y}|{x}_0)]$. By introducing an isotrophic Gaussian approximation $q_t({x}_0|{x}_t)=\mathcal{N}(\mathbb{E}[{x}_0|{x}_t], r_t^2 I)$ for $p_t({x}_0|{x}_t)$, we can obtain the following approximation by Gaussian marginalization:
 
 $$
-\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] \approx \arg\min_{\mathbf{x}_0} \lVert y - \mathbf{A} \mathbf{x}_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert \mathbf{x}_0 - \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t] \rVert^2_2
+p_t({y}|{x}_t) \approx \mathcal{N}({y}|{A}\mathbb{E}[{x}_0|{x}_t], \sigma^2 {I} + r_t^2 {A} {A}^T)
 $$
 
-which can be intepreted as compute the mean of an approximate distribution $q_t(\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}) \propto p(\mathbf{y}|\mathbf{x}_0)q_t(\mathbf{x}_0|\mathbf{x}_t)$  for the conditional posterior $p_t(\mathbf{x}_0|\mathbf{x}_t,\mathbf{y})\propto p(\mathbf{y}|\mathbf{x}_0)p_t(\mathbf{x}_0|\mathbf{x}_t)$.
+**Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[{x}_0|{x}_t, y]$ with the solution of the following proximal problem:
+
+$$
+\mathbb{E}[{x}_0|{x}_t,{y}] \approx \arg\min_{{x}_0} \lVert {y} - {A} {x}_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert {x}_0 - \mathbb{E}[{x}_0|{x}_t] \rVert^2_2
+$$
+
+which can be intepreted as compute the mean of an approximate distribution $q_t({x}_0|{x}_t,{y}) \propto p({y}|{x}_0)q_t({x}_0|{x}_t)$  for the conditional posterior $p_t({x}_0|{x}_t,{y})\propto p({y}|{x}_0)p_t({x}_0|{x}_t)$.
 
 ### Solving Inverse Problems with Optimal Posterior Covariance
 
-In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(\mathbf{x}_0|\mathbf{x}_t)=\mathcal{N}(\mu_t(\mathbf{x}_t), \Sigma_t(\mathbf{x}_t))$, such that
+In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t({x}_0|{x}_t)=\mathcal{N}(\mu_t({x}_t), \Sigma_t({x}_t))$, such that
 
 **Type I guidance.** The likelihood is approximated in a similar way by Gaussian marginalization:
 
 $$
-p_t(\mathbf{y}|\mathbf{x}_t) \approx \mathcal{N}(\mathbf{y}|\mathbf{A}\mu_t(\mathbf{x}_t), \sigma^2 \mathbf{I} + \mathbf{A} \Sigma_t(\mathbf{x}_t) \mathbf{A}^T)
+p_t({y}|{x}_t) \approx \mathcal{N}({y}|{A}\mu_t({x}_t), \sigma^2 {I} + {A} \Sigma_t({x}_t) {A}^T)
 $$
 
-**Type II guidance.** $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$ is approximated with the solution of the following auto-weighted proximal problem:
+**Type II guidance.** $\mathbb{E}[{x}_0|{x}_t,{y}]$ is approximated with the solution of the following auto-weighted proximal problem:
 
 $$
-\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] \approx  \arg\min_{\mathbf{x}_0} \lVert \mathbf{y} - \mathbf{A} \mathbf{x}_0 \rVert^2  + \sigma^2 \lVert \mathbf{x}_0 - \mu_t(\mathbf{x}_t) \rVert^2_{\Sigma_t^{-1}(\mathbf{x}_t)}
+\mathbb{E}[{x}_0|{x}_t,{y}] \approx  \arg\min_{{x}_0} \lVert {y} - {A} {x}_0 \rVert^2  + \sigma^2 \lVert {x}_0 - \mu_t({x}_t) \rVert^2_{\Sigma_t^{-1}({x}_t)}
 $$
 
 
