@@ -22,9 +22,6 @@ ___________
   - [Setup Conda Environment](#setup-conda-environment)
   - [Models and Analytic Variances](#models-and-analytic-variances)
   - [Reproduce Results](#reproduce-results)
-  - [Additional Results with Latent Variance](#additional-results-with-latent-variance)
-    - [Discrete Cosine Transform](#discrete-cosine-transform)
-    - [Discrete Wavelet Transform (Best Performance)](#discrete-wavelet-transform)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 
@@ -92,57 +89,37 @@ From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkel
 
 To run guidance based on analytic posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to ```./runs```.
 
+To run guidance based on DWT-Var covariance, download the download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to ```../model_zoo```.
+
+
 ### Reproduce Results
 From the [link](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link), download the validation data (the first 100 images from [FFHQ](https://github.com/NVlabs/ffhq-dataset) and [ImageNet](https://image-net.org/) datasets), unzip and paste it to ```../data```.
 
 For reproducing results on FFHQ dataset in Table 3, run
 ```bash
-bash quick_start/eval_guidance_I.sh ffhq
+bash quick_start/eval_guidance_I.sh ffhq # for Convert, Analytic, TMPD, DPS, PiGDM
+bash quick_start/dwt_var/eval_guidance_I.sh 1 # for DWT-Var
 ```
 
 For reproducing results on FFHQ dataset in Figure 3, run
 ```bash
-bash quick_start/eval_guidance_II.sh ffhq
+bash quick_start/eval_guidance_diffpir.sh ffhq # for DiffPIR
+bash quick_start/eval_guidance_II.sh ffhq # for Convert, Analytic
+bash quick_start/dwt_var/eval_guidance_II.sh 1 # for DWT-Var
 ```
 
 For reproducing results on FFHQ dataset in Table 4, run
 ```bash
-bash quick_start/eval_complete_pgdm.sh ffhq
-bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic
-bash quick_start/eval_complete_pgdm+mle.sh ffhq convert
+bash quick_start/eval_complete_pgdm+mle.sh ffhq convert # for Convert
+bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic # for Analytic
+bash quick_start/eval_complete_pgdm.sh ffhq # for PiGDM
 ```
 
 For reproducing results on FFHQ dataset in Figure 4, run
 ```bash
-bash quick_start/eval_complete_dps.sh ffhq
-bash quick_start/eval_complete_dps+mle.sh ffhq analytic
-bash quick_start/eval_complete_dps+mle.sh ffhq convert
-```
-
-## Additional Results with Latent Variance
-### Discrete Cosine Transform
-We provide additonal experimental results (Appendix D.5) for demonstrating that the proposed method has the potential for generalizing to correlated (non-diagonal) posterior covariance. To reproduce the results based on learned Discrete Cosine Transform (DCT) variance, from the [link](https://drive.google.com/file/d/1YsM-QhEc0TwJHe2q22Zkd_Y7fL1UswGj/view?usp=drive_link), download the FFHQ checkpoint ```ffhq_dct.pth``` and paste it to ```../model_zoo```.
-
-For reproducing results on FFHQ dataset in Table 5, run
-```bash
-bash quick_start/dct_var/eval_guidance_I.sh 0
-bash quick_start/dct_var/eval_guidance_I.sh 1
-bash quick_start/dct_var/eval_guidance_I_spatial_var.sh 0.2
-
-bash quick_start/dct_var/eval_guidance_II.sh 0
-bash quick_start/dct_var/eval_guidance_II.sh 1
-bash quick_start/dct_var/eval_guidance_II_spatial_var.sh 0.2
-```
-### Discrete Wavelet Transform
-We also provide checkpoint for learned Discrete Wavelet Transform (DWT) variance. Example model outputs (bottom) are given as follows:
-
-![DWT Variance](assests/dwt.png "Example model outputs")
-
-To test the performance with DWT variance, please download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to ```../model_zoo```, and test with
-
-```bash
-bash quick_start/dwt_var/eval_guidance_I.sh 1
-bash quick_start/dwt_var/eval_guidance_II.sh 1
+bash quick_start/eval_complete_dps+mle.sh ffhq convert # for Convert
+bash quick_start/eval_complete_dps+mle.sh ffhq analytic # for Analytic
+bash quick_start/eval_complete_dps.sh ffhq # for DPS
 ```
 
 

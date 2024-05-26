@@ -246,10 +246,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                     / _extract_into_tensor(D.posterior_mean_coef1, t, x.shape).pow(2)
                 ).clip(min=1e-6) # Eq. (22)       
             else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'analytic':
             assert self.recon_mse is not None
@@ -257,10 +254,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
                 idx = (self.recon_mse['sigmas'] - sigma[0]).abs().argmin()
                 x0_var = self.recon_mse['mse_list'][idx]
             else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+                x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
 
         elif self.x0_cov_type == 'pgdm':
             x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
@@ -273,13 +267,7 @@ class ConditionOpenAIDenoiser(ConditionDenoiser):
             x0_var = sigma.pow(2) / self.lambda_ 
 
         elif self.x0_cov_type == 'tmpd':      
-            if sigma < self.mle_sigma_thres:
-                x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)      
-            else:
-                if self.lambda_ is not None:
-                    x0_var = sigma.pow(2) / self.lambda_ 
-                else:
-                    x0_var = sigma.pow(2) / (1 + sigma.pow(2)) 
+            x0_var = grad(x0_mean.sum(), x, retain_graph=True)[0] * sigma.pow(2)
 
         else:
             raise ValueError('Invalid posterior covariance type.')
@@ -312,32 +300,6 @@ class ConditionOpenAIDenoiserV2(ConditionDenoiser):
 
         return x0_mean, x0_var, theta0_var
     
-
-class ConditionImageDenoiserV2(ConditionDenoiser):
-
-    def __init__(self, denoiser: ImageDenoiserModelV2, **kwargs):
-        super().__init__(**kwargs)
-        self.denoiser = denoiser
-        ortho_tf_type = kwargs.get('ortho_tf_type', None)
-        if ortho_tf_type is not None:
-            assert ortho_tf_type == denoiser.ortho_tf_type, \
-                "ortho_tf_type must match the one used in the denoiser"
-
-    def uncond_pred(self, x, sigma):
-        c_skip, c_out, c_in = self.denoiser.get_scalings(sigma)
-        model_output, logvar, logvar_ot = self.denoiser(x, sigma, return_variance=True)
-
-        x0_mean = model_output * c_out + x * c_skip
-
-        if sigma < self.mle_sigma_thres:
-            x0_var = logvar.exp() * c_out.pow(2)
-            theta0_var = logvar_ot.exp() * c_out.pow(2)
-        else:
-            x0_var = sigma.pow(2) / (1 + sigma.pow(2))
-            theta0_var = sigma.pow(2) / (1 + sigma.pow(2))
-
-        return x0_mean, x0_var, theta0_var
-
 
 #---------------------------------------------
 # Implementation of mat solver (computing v)
