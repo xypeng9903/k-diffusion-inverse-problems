@@ -34,42 +34,42 @@ without retraining for specific inverse problems. In this paper, we propose the 
 ## Brief Introduction
 
 ### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
-We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
+We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
 
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t, y]$ is approximated based on the following relationship:
-
-$$
-\mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
-$$
-
-where $p_t(y|x_t)$ is given by an intractable integral $\mathbb{E}_{p_t(x_0|x_t)}[p(y|x_0)]$. By introducing an isotrophic Gaussian approximation $q_t(x_0|x_t)=\mathcal{N}(\mathbb{E}[x_0|x_t], r_t^2 I)$ for $p_t(x_0|x_t)$, we can obtain the following approximation by Gaussian marginalization:
+**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$ is approximated based on the following relationship:
 
 $$
-p_t(y|x_t) \approx \mathcal{N}(y|A\mathbb{E}[x_0|x_t], \sigma^2 I + r_t^2 A A^T)
+\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] = \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t] + s_t \sigma_t^2 \nabla_{\mathbf{x}_t} \log p_t(\mathbf{y}|\mathbf{x}_t)
 $$
 
-**Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[x_0|x_t, y]$ with the solution of the following proximal problem:
+where $p_t(\mathbf{y}|\mathbf{x}_t)$ is given by an intractable integral $\mathbb{E}_{p_t(\mathbf{x}_0|\mathbf{x}_t)}[p(\mathbf{y}|\mathbf{x}_0)]$. By introducing an isotrophic Gaussian approximation $q_t(\mathbf{x}_0|\mathbf{x}_t)=\mathcal{N}(\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t], r_t^2 I)$ for $p_t(\mathbf{x}_0|\mathbf{x}_t)$, we can obtain the following approximation by Gaussian marginalization:
 
 $$
-\mathbb{E}[x_0|x_t,y] \approx \arg\min_{x_0} \lVert y - A x_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert x_0 - \mathbb{E}[x_0|x_t] \rVert^2_2
+p_t(\mathbf{y}|\mathbf{x}_t) \approx \mathcal{N}(\mathbf{y}|\mathbf{A}\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t], \sigma^2 \mathbf{I} + r_t^2 \mathbf{A} \mathbf{A}^T)
 $$
 
-which can be intepreted as compute the mean of an approximate distribution $q_t(x_0|x_t,y) \propto p(y|x_0)q_t(x_0|x_t)$  for the conditional posterior $p_t(x_0|x_t,y)\propto p(y|x_0)p_t(x_0|x_t)$.
+**Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t, y]$ with the solution of the following proximal problem:
+
+$$
+\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] \approx \arg\min_{\mathbf{x}_0} \lVert y - \mathbf{A} \mathbf{x}_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert \mathbf{x}_0 - \mathbb{E}[\mathbf{x}_0|\mathbf{x}_t] \rVert^2_2
+$$
+
+which can be intepreted as compute the mean of an approximate distribution $q_t(\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}) \propto p(\mathbf{y}|\mathbf{x}_0)q_t(\mathbf{x}_0|\mathbf{x}_t)$  for the conditional posterior $p_t(\mathbf{x}_0|\mathbf{x}_t,\mathbf{y})\propto p(\mathbf{y}|\mathbf{x}_0)p_t(\mathbf{x}_0|\mathbf{x}_t)$.
 
 ### Solving Inverse Problems with Optimal Posterior Covariance
 
-In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(x_0|x_t)=\mathcal{N}(\mu_t(x_t), \Sigma_t(x_t))$, such that
+In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(\mathbf{x}_0|\mathbf{x}_t)=\mathcal{N}(\mu_t(\mathbf{x}_t), \Sigma_t(\mathbf{x}_t))$, such that
 
 **Type I guidance.** The likelihood is approximated in a similar way by Gaussian marginalization:
 
 $$
-p_t(y|x_t) \approx \mathcal{N}(y|A\mu_t(x_t), \sigma^2 I + A \Sigma_t(x_t) A^T)
+p_t(\mathbf{y}|\mathbf{x}_t) \approx \mathcal{N}(\mathbf{y}|\mathbf{A}\mu_t(\mathbf{x}_t), \sigma^2 \mathbf{I} + \mathbf{A} \Sigma_t(\mathbf{x}_t) \mathbf{A}^T)
 $$
 
-**Type II guidance.** $\mathbb{E}[x_0|x_t,y]$ is approximated with the solution of the following auto-weighted proximal problem:
+**Type II guidance.** $\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}]$ is approximated with the solution of the following auto-weighted proximal problem:
 
 $$
-\mathbb{E}[x_0|x_t,y] \approx  \arg\min_{x_0} \lVert y - A x_0 \rVert^2  + \sigma^2 \lVert x_0 - \mu_t(x_t) \rVert^2_{\Sigma_t^{-1}(x_t)}
+\mathbb{E}[\mathbf{x}_0|\mathbf{x}_t,\mathbf{y}] \approx  \arg\min_{\mathbf{x}_0} \lVert \mathbf{y} - \mathbf{A} \mathbf{x}_0 \rVert^2  + \sigma^2 \lVert \mathbf{x}_0 - \mu_t(\mathbf{x}_t) \rVert^2_{\Sigma_t^{-1}(\mathbf{x}_t)}
 $$
 
 
@@ -87,9 +87,9 @@ conda activate k-diffusion
 ### Models and Analytic Variances
 From the [link](https://drive.google.com/drive/folders/1jElnRoFv7b31fG0v6pTSQkelbSX3xGZh?usp=sharing), download the FFHQ checkpoint ```ffhq_10m.pt```, rename to ```diffusion_ffhq_10m.pt```, and paste it to ```../model_zoo```.
 
-To run guidance based on analytic posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to ```./runs```.
+To run guidance based on ```Analytic``` posterior covariance, download the precomputed Monte Carlo estimation from the [link](https://drive.google.com/drive/folders/1D93IZU0ViyExWm1k-L6dRehDHs1jAxGx?usp=drive_link), and paste it to ```./runs```.
 
-To run guidance based on DWT-Var covariance, download the download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link) to ```../model_zoo```.
+To run guidance based on ```DWT-Var``` covariance, download the FFHQ checkpoint ```ffhq_dwt.ckpt``` from the [link](https://drive.google.com/file/d/1ARbLbss9ByMOtF-7cl9_Yd2OupKk-72m/view?usp=drive_link), and paste it to ```../model_zoo```.
 
 
 ### Reproduce Results
