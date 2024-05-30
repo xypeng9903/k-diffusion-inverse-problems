@@ -2,13 +2,13 @@
 
 This repository contains the code and data associated with the paper:
 
-**Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance**
-
-Xinyu Peng, Ziyang Zheng, Wenrui Dai, Nuoqian Xiao, Chenglin Li, Junni Zou, Hongkai Xiong
+**Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance** <br>
+Xinyu Peng, Ziyang Zheng, Wenrui Dai, Nuoqian Xiao, Chenglin Li, Junni Zou, Hongkai Xiong <br>
+https://arxiv.org/abs/2402.02149
 
 **Abstract:** *Recent diffusion models provide a promising zero-shot solution to noisy linear inverse problems without retraining for specific inverse problems. In this paper, we reveal that recent methods can be uniformly interpreted as employing a Gaussian approximation with hand-crafted isotropic covariance for the intractable denoising posterior to approximate the conditional posterior mean. Inspired by this finding, we propose to improve recent methods by using more principled covariance determined by maximum likelihood estimation. To achieve posterior covariance optimization without retraining, we provide general plug-and-play solutions based on two approaches specifically designed for leveraging pre-trained models with and without reverse covariance. In addition, we propose a scalable method for learning posterior covariance prediction by leveraging widely-used orthonormal basis for image processing. Experimental results demonstrate that the proposed methods significantly enhance the overall performance and eliminate the need for hyperparameter tuning.*
 
-https://arxiv.org/abs/2402.02149.
+
 
 
 
@@ -22,62 +22,9 @@ This code is based on:
 
 - [GPyTorch](https://github.com/cornellius-gp/gpytorch): Provide tools for implementing differentiable Gaussian likelihoods, enabling auto-computed Type I guidance (Use `--guidance autoI`).
 
-___________
-**Contents**
-- [Abstract](#abstract)
-- [Brief Introduction](#brief-introduction)
-  - [Unified Intepretation of Diffusion-based Solvers to Inverse Problems](#unified-intepretation-of-diffusion-based-solvers-to-inverse-problems)
-  - [Solving Inverse Problems With Optimal Posterior Covariance](#solving-inverse-problems-with-optimal-posterior-covariance)
-- [Setting Up](#setting-up)
-  - [Setup Conda Environment](#setup-conda-environment)
-  - [Models and Analytic Variances](#models-and-analytic-variances)
-  - [Reproduce Results](#reproduce-results)
-- [Citation](#citation)
 
 
-## Brief Introduction
-
-### Unified Intepretation of Diffusion-based Solvers to Inverse Problems
-We provide unified intepretation of previous diffusion-based solvers to inverse problems from the view of approximating the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$. Specifically, we classify them into two categories, Type I and Type II guidance, according to approximation paradigms, as elaborated below.
-
-**Type I guidance.** We classify [DPS](https://arxiv.org/pdf/2209.14687.pdf) and [PiGDM](https://openreview.net/forum?id=9_gsMA8MRKQ) into one category, referred to as Type I guidance, where the conditional posterior mean $\mathbb{E}[x_0|x_t,y]$ is approximated based on the following relationship:
-
-$$
-\mathbb{E}[x_0|x_t,y] = \mathbb{E}[x_0|x_t] + s_t \sigma_t^2 \nabla_{x_t} \log p_t(y|x_t)
-$$
-
-where $p_t(y|x_t)$ is given by an intractable integral $\mathbb{E}_{p_t(x_0|x_t)}[p(y|x_0)]$. By introducing an isotrophic Gaussian approximation $q_t(x_0|x_t)=\mathcal{N}(\mathbb{E}[x_0|x_t], r_t^2 I)$ for $p_t(x_0|x_t)$, we can obtain the following approximation by Gaussian marginalization:
-
-$$
-p_t(y|x_t) \approx \mathcal{N}(y|A\mathbb{E}[x_0|x_t], \sigma^2 {I} + r_t^2 A A^T)
-$$
-
-**Type II guidance.** We classify [DiffPIR](https://arxiv.org/pdf/2305.08995.pdf) and [DDNM](https://arxiv.org/pdf/2212.00490.pdf) into the category of Type II guidance, which approximates $\mathbb{E}[x_0|x_t, y]$ with the solution of the following proximal problem:
-
-$$
-\mathbb{E}[x_0|x_t,y] \approx \arg\min_{x_0} \lVert y - A x_0 \rVert^2_2  + \frac{\sigma^2}{r_t^2} \lVert x_0 - \mathbb{E}[x_0|x_t] \rVert^2_2
-$$
-
-which can be intepreted as compute the mean of an approximate distribution $q_t(x_0|x_t,y) \propto p(y|x_0)q_t(x_0|x_t)$  for the conditional posterior $p_t(x_0|x_t,y)\propto p(y|x_0)p_t(x_0|x_t)$.
-
-### Solving Inverse Problems with Optimal Posterior Covariance
-
-In our study, we generalize the above guidances based on variational Gaussian posterior with general covariance $q_t(x_0|x_t)=\mathcal{N}(\mu_t(x_t), \Sigma_t(x_t))$, such that
-
-**Type I guidance.** The likelihood is approximated in a similar way by Gaussian marginalization:
-
-$$
-p_t(y|x_t) \approx \mathcal{N}(y|A\mu_t(x_t), \sigma^2 {I} + A \Sigma_t(x_t) A^T)
-$$
-
-**Type II guidance.** $\mathbb{E}[x_0|x_t,y]$ is approximated with the solution of the following auto-weighted proximal problem:
-
-$$
-\mathbb{E}[x_0|x_t,y] \approx  \arg\min_{x_0} \lVert y - A x_0 \rVert^2  + \sigma^2 \lVert x_0 - \mu_t(x_t) \rVert^2_{\Sigma_t^{-1}(x_t)}
-$$
-
-
-## Setting Up
+## Getting started
 ### Setup Conda Environment
 For creating the conda environment and installing dependencies run
 ```
