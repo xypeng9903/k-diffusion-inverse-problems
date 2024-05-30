@@ -12,7 +12,6 @@ from gpytorch.distributions import MultivariateNormal
 import condition.diffpir_utils.utils_sisr as sr
 from .utils import OrthoTransform, LazyOTCovariance
 from k_diffusion.external import OpenAIDenoiser, OpenAIDenoiserV2
-from k_diffusion.models import ImageDenoiserModelV2
 from guided_diffusion.gaussian_diffusion import GaussianDiffusion, _extract_into_tensor
 
 
