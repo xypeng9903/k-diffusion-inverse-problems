@@ -1,6 +1,4 @@
-# Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance <br><sub>Official PyTorch implementation of the ICML 2024 paper</sub>
-
-This repository contains the code and data associated with the paper:
+## Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance <br><sub>Official PyTorch implementation of the ICML 2024 paper</sub>
 
 **Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance** <br>
 Xinyu Peng, Ziyang Zheng, Wenrui Dai, Nuoqian Xiao, Chenglin Li, Junni Zou, Hongkai Xiong <br>
@@ -24,7 +22,7 @@ This code is based on:
 
 
 
-## Getting started
+## Getting Started
 ### Setup Conda Environment
 For creating the conda environment and installing dependencies run
 ```
