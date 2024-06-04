@@ -2,7 +2,7 @@
 
 **Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance** <br>
 Xinyu Peng, Ziyang Zheng, Wenrui Dai, Nuoqian Xiao, Chenglin Li, Junni Zou, Hongkai Xiong <br>
-https://arxiv.org/abs/2402.02149
+https://arxiv.org/abs/2402.02149v2
 
 **Abstract:** *Recent diffusion models provide a promising zero-shot solution to noisy linear inverse problems without retraining for specific inverse problems. In this paper, we reveal that recent methods can be uniformly interpreted as employing a Gaussian approximation with hand-crafted isotropic covariance for the intractable denoising posterior to approximate the conditional posterior mean. Inspired by this finding, we propose to improve recent methods by using more principled covariance determined by maximum likelihood estimation. To achieve posterior covariance optimization without retraining, we provide general plug-and-play solutions based on two approaches specifically designed for leveraging pre-trained models with and without reverse covariance. In addition, we propose a scalable method for learning posterior covariance prediction by leveraging widely-used orthonormal basis for image processing. Experimental results demonstrate that the proposed methods significantly enhance the overall performance and eliminate the need for hyperparameter tuning.*
 
@@ -44,7 +44,7 @@ To run guidance based on ```DWT-Var``` posterior covariance, download the FFHQ c
 ### Reproduce Results
 From the [link](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link), download the validation data (the first 100 images from [FFHQ](https://github.com/NVlabs/ffhq-dataset) and [ImageNet](https://image-net.org/) datasets), unzip and paste it to ```../data```.
 
-For reproducing results on FFHQ dataset in Table 3, run
+For reproducing results on FFHQ dataset in Table 2, run
 ```bash
 bash quick_start/eval_guidance_I.sh ffhq # for Convert, Analytic, TMPD, DPS, PiGDM
 bash quick_start/dwt_var/eval_guidance_I.sh 1 # for DWT-Var
@@ -57,7 +57,7 @@ bash quick_start/eval_guidance_II.sh ffhq # for PiGDM, Convert, Analytic
 bash quick_start/dwt_var/eval_guidance_II.sh 1 # for DWT-Var
 ```
 
-For reproducing results on FFHQ dataset in Table 4, run
+For reproducing results on FFHQ dataset in Table 3, run
 ```bash
 bash quick_start/eval_complete_pgdm+mle.sh ffhq convert # for Convert
 bash quick_start/eval_complete_pgdm+mle.sh ffhq analytic # for Analytic
