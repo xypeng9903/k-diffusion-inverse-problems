@@ -76,13 +76,13 @@ bash quick_start/eval_complete_dps.sh ffhq # for DPS
 If you find this repo helpful, please cite:
 
 ```bibtex
-@misc{peng2024improving,
-      title={Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance}, 
-      author={Xinyu Peng and Ziyang Zheng and Wenrui Dai and Nuoqian Xiao and Chenglin Li and Junni Zou and Hongkai Xiong},
-      year={2024},
-      eprint={2402.02149},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
+@inproceedings{
+peng2024improving,
+title={Improving Diffusion Models for Inverse Problems Using Optimal Posterior Covariance},
+author={Xinyu Peng and Ziyang Zheng and Wenrui Dai and Nuoqian Xiao and Chenglin Li and Junni Zou and Hongkai Xiong},
+booktitle={Forty-first International Conference on Machine Learning},
+year={2024},
+url={https://openreview.net/forum?id=DrE7jVF4VW}
 }
 ```
 
