@@ -16,6 +16,7 @@ Let $q_t(\mathbf{x}_0|\mathbf{x}_t)=\mathcal{N}(D_t(\mathbf{x}_t),\Sigma_t(\math
 ```bash
 bash quick_start/eval_guidance_I.sh 1
 bash quick_start/eval_guidance_II.sh 1
+```
 
 ## Citation
 If you find this repo helpful, please cite:
